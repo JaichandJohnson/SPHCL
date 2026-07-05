@@ -1,0 +1,75 @@
+{
+  "theme_and_archetype": {
+    "theme": "light",
+    "archetype": "Archetype 4 (Swiss & High-Contrast)",
+    "context": "Clinical Laboratory Admin Dashboard. Authoritative, precise, reliable, focused on dense data scannability."
+  },
+  "typography": {
+    "headings_font": "Work Sans",
+    "body_font": "IBM Plex Sans",
+    "mono_font": "IBM Plex Mono",
+    "h1": "text-3xl sm:text-4xl font-semibold tracking-tight text-slate-900",
+    "h2": "text-2xl sm:text-3xl font-medium tracking-tight text-slate-900",
+    "h3": "text-lg sm:text-xl font-medium text-slate-800",
+    "body": "text-sm text-slate-600 leading-relaxed",
+    "table_data": "text-sm tabular-nums text-slate-700",
+    "labels": "text-xs font-semibold tracking-[0.05em] uppercase text-slate-500"
+  },
+  "color_palette": {
+    "background": "bg-slate-50",
+    "surface": "bg-white",
+    "surface_hover": "hover:bg-slate-100 hover:text-slate-900",
+    "primary": "bg-blue-600 text-white",
+    "primary_hover": "hover:bg-blue-700 hover:text-white",
+    "border": "border-slate-200",
+    "text_primary": "text-slate-900",
+    "text_secondary": "text-slate-500",
+    "accent_alert": "text-red-600 bg-red-50 border-red-200",
+    "accent_success": "text-emerald-700 bg-emerald-50 border-emerald-200"
+  },
+  "layout_and_spacing": {
+    "grid_strategy": "Control Room Grid (Dense, Data Correlation). grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4",
+    "spacing_scale": "Strict adherence to p-4 or p-6 for containers. Tight padding (p-2) for dense table cells.",
+    "page_structure": "Left sidebar navigation + Top Sticky Header + Main Content Area",
+    "alignment": "Left-aligned for all tabular data and forms. Only center login/hero content."
+  },
+  "surface_strategies": {
+    "cards": "Flat background, 1px subtle border (border-slate-200), NO shadow. Clean clinical look.",
+    "header": "Crystal Glassmorphism: backdrop-blur-xl bg-white/70, 1px bottom border.",
+    "modals_dialogs": "Solid white background, dark overlay bg-slate-900/40, sharp borders."
+  },
+  "components": {
+    "data_entry_form": "Stacked layout. Shadcn inputs. Dynamic multi-result rows should have subtle gray background (bg-slate-50) to group them visually. Use icon buttons for Add/Remove.",
+    "data_tables": "Shadcn Table. Use 'border-collapse'. sticky header with bg-white. Zebra striping (even:bg-slate-50) for scannability. Use tabular-nums class for all numeric columns.",
+    "buttons": "Tactile. Sharp 4px rounded corners (rounded-md), solid colors. No gradients.",
+    "icons": "Phosphor Icons (@phosphor-icons/react). Weight: 'regular' or 'bold' for active states."
+  },
+  "motion": {
+    "transitions": "Minimalist. transition-colors duration-150 ease-in-out for buttons/links. No page-level animations.",
+    "feedback": "Use toast notifications (Sonner) for all success/error states (e.g., 'Saved to Drive', 'Bulk result applied')."
+  },
+  "media_assets": {
+    "login_hero_bg": {
+      "url": "https://images.pexels.com/photos/8442037/pexels-photo-8442037.jpeg",
+      "description": "Focused view of a microscope in a modern laboratory setting",
+      "usage": "Background for the Google Sign-in landing page, overlaid with bg-white/80 or bg-slate-900/60 depending on the split design."
+    },
+    "dashboard_placeholder": {
+      "url": "https://images.unsplash.com/photo-1551288049-bebda4e38f71",
+      "description": "graphs of performance analytics",
+      "usage": "Optional placeholder image for empty states in reports."
+    }
+  },
+  "testing_attributes": {
+    "rule": "All interactive and key informational elements MUST include a data-testid attribute.",
+    "convention": "kebab-case, role-based. e.g., data-testid='login-google-button', data-testid='submit-lab-result-button', data-testid='add-dynamic-result-row'"
+  },
+  "instructions_to_main_agent": [
+    "Do NOT use HTML-based components for advanced user interactions. Use Shadcn UI primitives.",
+    "Install and use @phosphor-icons/react for clinical, authoritative iconography (e.g., Microscope, TestTube, FileCsv, CloudArrowUp).",
+    "For the dynamic multi-result rows, manage state using React Hook Form's useFieldArray if applicable, or custom state mapping. Ensure each row has a 'Name' (Test Name/Parameter) and 'Result' (Text/Number).",
+    "Implement bulk result entry using a Shadcn Table with row selection (checkboxes). Select rows -> Open a top bar/modal to 'Apply Result' -> Updates all selected.",
+    "For the Google Drive backup, integrate the Google Drive Picker/API or simulate it with a clear loading state and toast success message, exporting a CSV/Excel blob.",
+    "Color scheme MUST stick to the defined slate and blue. Banned colors: purple, teal (#1B93A4), neon green."
+  ]
+}
