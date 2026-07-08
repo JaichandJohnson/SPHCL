@@ -17,7 +17,7 @@ import { RECORDS } from "@/constants/testIds";
 const empty = () => ({
   lab_number: "", date: new Date().toISOString().slice(0, 10),
   name: "", age: "", district: "", test: "", sample_type: "",
-  results: [{ name: "Result", value: "" }],
+  results: [{ name: "", value: "" }],
   result_date: "", remarks: "",
 });
 
@@ -36,7 +36,7 @@ export default function DataEntry() {
         setForm({
           ...d,
           age: d.age ?? "",
-          results: d.results?.length ? d.results : [{ name: "Result", value: "" }],
+          results: [{ name: "", value: "" }],
           result_date: d.result_date || "",
           remarks: d.remarks || "",
         });
@@ -48,7 +48,7 @@ export default function DataEntry() {
   const updateResult = (i, k, v) => setForm((f) => {
     const r = [...f.results]; r[i] = { ...r[i], [k]: v }; return { ...f, results: r };
   });
-  const addResult = () => setForm((f) => ({ ...f, results: [...f.results, { name: `Result ${f.results.length + 1}`, value: "" }] }));
+  results: [{ name: "", value: "" }],
   const removeResult = (i) => setForm((f) => ({ ...f, results: f.results.filter((_, x) => x !== i) }));
 
   const save = async (e) => {
