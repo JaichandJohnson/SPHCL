@@ -34,12 +34,11 @@ export default function DataEntry() {
   const [opts, setOpts] = useState({ test: [], district: [], sample_type: [] });
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    api.get("/options").then((r) => setOpts(r.data)).catch(() => {});
-    if (id) {
-      api.get(`/records/${id}`).then((r) => {
-        const d = r.data;
-         console.log("========== RECORD LOADED ==========");
+  api.get("/options").then((r) => {
+  console.log("OPTIONS LOADED");
+  console.log(r.data);
+  setOpts(r.data);
+}).catch(() => {});
   console.log(d);
         setForm({
           ...d,
