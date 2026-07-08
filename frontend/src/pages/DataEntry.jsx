@@ -15,10 +15,16 @@ import { Plus, Trash, FloppyDisk, X } from "@phosphor-icons/react";
 import { RECORDS } from "@/constants/testIds";
 
 const empty = () => ({
-  lab_number: "", date: new Date().toISOString().slice(0, 10),
-  name: "", age: "", district: "", test: "", sample_type: "",
+  lab_number: "",
+  date: new Date().toISOString().slice(0, 10),
+  name: "",
+  age: "",
+  district: "",
+  test: "",
+  sample_type: "",
   results: [{ name: "", value: "" }],
-  result_date: "", remarks: "",
+  result_date: "",
+  remarks: "",
 });
 
 export default function DataEntry() {
@@ -28,42 +34,29 @@ export default function DataEntry() {
   const [opts, setOpts] = useState({ test: [], district: [], sample_type: [] });
   const [saving, setSaving] = useState(false);
 
-useEffect(() => {
-  const load = async () => {
-    try {
-      const optionsResponse = await api.get("/options");
-      setOpts(optionsResponse.data);
-
-      if (id) {
-        const recordResponse = await api.get(`/records/${id}`);
-        const d = recordResponse.data;
-
-        console.log("Loaded record:", d); // Temporary for debugging
-
+  useEffect(() => {
+    api.get("/options").then((r) => setOpts(r.data)).catch(() => {});
+    if (id) {
+      api.get(`/records/${id}`).then((r) => {
+        const d = r.data;
         setForm({
           ...d,
           age: d.age ?? "",
-          results: d.results?.length
-            ? d.results
-            : [{ name: "", value: "" }],
+          results: d.results?.length ? d.results : [{ name: "", value: "" }],
           result_date: d.result_date || "",
           remarks: d.remarks || "",
         });
-      }
-    } catch (err) {
-      console.error(err);
-      toast.error("Failed to load data");
+      }).catch(() => toast.error("Failed to load record"));
     }
-  };
-
-  load();
-}, [id]);
+  }, [id]);
 
   const update = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   const updateResult = (i, k, v) => setForm((f) => {
     const r = [...f.results]; r[i] = { ...r[i], [k]: v }; return { ...f, results: r };
   });
-  results: [{ name: "", value: "" }],
+  const addResult = () => setForm((f) => ({ ...f, results: [...f.results,  { name: "", value: "" },
+    ],
+  }));
   const removeResult = (i) => setForm((f) => ({ ...f, results: f.results.filter((_, x) => x !== i) }));
 
   const save = async (e) => {
@@ -219,16 +212,15 @@ const Field = ({ label, children }) => (
 );
 
 const SelectField = ({ value, onChange, options, placeholder, testId }) => (
-  <Select value={value || ""} onValueChange={onChange}>
+  <Select value={value} onValueChange={onChange}>
     <SelectTrigger data-testid={testId} className="bg-white">
       <SelectValue placeholder={placeholder} />
     </SelectTrigger>
     <SelectContent>
       {options?.map((o) => (
-        <SelectItem key={o} value={o}>
-          {o}
-        </SelectItem>
+        <SelectItem key={o} value={o}>{o}</SelectItem>
       ))}
     </SelectContent>
   </Select>
 );
+
