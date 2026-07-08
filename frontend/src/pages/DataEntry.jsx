@@ -39,6 +39,8 @@ export default function DataEntry() {
     if (id) {
       api.get(`/records/${id}`).then((r) => {
         const d = r.data;
+         console.log("========== RECORD LOADED ==========");
+  console.log(d);
         setForm({
           ...d,
           age: d.age ?? "",
