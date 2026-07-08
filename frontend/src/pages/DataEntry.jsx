@@ -109,7 +109,18 @@ export default function DataEntry() {
             <Input data-testid={RECORDS.age} type="number" min="0" value={form.age} onChange={(e) => update("age", e.target.value)} />
           </Field>
           <Field label="District *">
-            <SelectField testId={RECORDS.district} value={form.district} onChange={(v) => update("district", v)} options={opts.district} placeholder="Select district" />
+            <select
+    value={form.district}
+    onChange={(e) => update("district", e.target.value)}
+    className="w-full border rounded p-2"
+>
+    <option value="">Select district</option>
+    {opts.district.map((d) => (
+        <option key={d} value={d}>
+            {d}
+        </option>
+    ))}
+</select>
           </Field>
           <Field label="Test *">
             <SelectField testId={RECORDS.test} value={form.test} onChange={(v) => update("test", v)} options={opts.test} placeholder="Select test" />
