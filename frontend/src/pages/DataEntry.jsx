@@ -28,21 +28,21 @@ export default function DataEntry() {
   const [opts, setOpts] = useState({ test: [], district: [], sample_type: [] });
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    api.get("/options").then((r) => setOpts(r.data)).catch(() => {});
-    if (id) {
-      api.get(`/records/${id}`).then((r) => {
-        const d = r.data;
-        setForm({
-          ...d,
-          age: d.age ?? "",
-          results: [{ name: "", value: "" }],
-          result_date: d.result_date || "",
-          remarks: d.remarks || "",
-        });
-      }).catch(() => toast.error("Failed to load record"));
-    }
-  }, [id]);
+ api.get(`/records/${id}`).then((r) => {
+  console.log("Record from API:", r.data);
+
+  const d = r.data;
+
+  setForm({
+    ...d,
+    age: d.age ?? "",
+    results: d.results?.length
+      ? d.results
+      : [{ name: "", value: "" }],
+    result_date: d.result_date || "",
+    remarks: d.remarks || "",
+  });
+});
 
   const update = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   const updateResult = (i, k, v) => setForm((f) => {
