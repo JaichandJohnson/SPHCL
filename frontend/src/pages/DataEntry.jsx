@@ -23,6 +23,8 @@ const empty = () => ({
 
 export default function DataEntry() {
   const { id } = useParams();
+  console.log("Route ID:", id);
+console.log("Edit Mode:", !!id);
   const nav = useNavigate();
   const [form, setForm] = useState(empty());
   const [opts, setOpts] = useState({ test: [], district: [], sample_type: [] });
