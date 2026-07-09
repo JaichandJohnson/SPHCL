@@ -187,24 +187,24 @@ export default function DataEntry() {
             <div className="mt-2 space-y-2 bg-slate-50 border border-slate-200 rounded-md p-3">
               {form.results.map((r, i) => (
                 <div key={i} className="grid grid-cols-12 gap-2 items-center">
-                  <Input
-                    data-testid={RECORDS.resultName(i)}
-                    placeholder="Result Name (e.g., Ct value)"
-                    className="col-span-5 bg-white"
-                    value={r.name}
-                    onChange={(e) => updateResult(i, "name", e.target.value)}
-                  />
                   <select
-  data-testid={RECORDS.resultValue(i)}
-  className="col-span-6 bg-white border rounded p-2"
-  value={r.value}
-  onChange={(e) => updateResult(i, "value", e.target.value)}
+  data-testid={RECORDS.resultName(i)}
+  className="col-span-5 bg-white border rounded p-2"
+  value={r.name}
+  onChange={(e) => updateResult(i, "name", e.target.value)}
 >
   <option value="">Select result</option>
   <option value="Positive">Positive</option>
   <option value="Negative">Negative</option>
   <option value="Indeterminate">Indeterminate</option>
 </select>
+                  <Input
+  data-testid={RECORDS.resultValue(i)}
+  placeholder="Value / Remarks"
+  className="col-span-6 bg-white"
+  value={r.value}
+  onChange={(e) => updateResult(i, "value", e.target.value)}
+/>
                   <Button
                     type="button"
                     variant="ghost"
