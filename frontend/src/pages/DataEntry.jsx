@@ -17,7 +17,7 @@ import { RECORDS } from "@/constants/testIds";
 const empty = () => ({
   lab_number: "", date: new Date().toISOString().slice(0, 10),
   name: "", age: "", district: "", test: "", sample_type: "",
-  results: [{ name: "Result", value: "" }],
+  results: [{ name: "", value: "" }],
   result_date: "", remarks: "",
 });
 
@@ -69,7 +69,14 @@ export default function DataEntry() {
   const updateResult = (i, k, v) => setForm((f) => {
     const r = [...f.results]; r[i] = { ...r[i], [k]: v }; return { ...f, results: r };
   });
-  const addResult = () => setForm((f) => ({ ...f, results: [...f.results, { name: `Result ${f.results.length + 1}`, value: "" }] }));
+  const addResult = () =>
+  setForm((f) => ({
+    ...f,
+    results: [
+      ...f.results,
+      { name: "", value: "" }
+    ],
+  }));
   const removeResult = (i) => setForm((f) => ({ ...f, results: f.results.filter((_, x) => x !== i) }));
 
   const save = async (e) => {
@@ -187,13 +194,17 @@ export default function DataEntry() {
                     value={r.name}
                     onChange={(e) => updateResult(i, "name", e.target.value)}
                   />
-                  <Input
-                    data-testid={RECORDS.resultValue(i)}
-                    placeholder="Value (text or number)"
-                    className="col-span-6 bg-white"
-                    value={r.value}
-                    onChange={(e) => updateResult(i, "value", e.target.value)}
-                  />
+                  <select
+  data-testid={RECORDS.resultValue(i)}
+  className="col-span-6 bg-white border rounded p-2"
+  value={r.value}
+  onChange={(e) => updateResult(i, "value", e.target.value)}
+>
+  <option value="">Select result</option>
+  <option value="Positive">Positive</option>
+  <option value="Negative">Negative</option>
+  <option value="Indeterminate">Indeterminate</option>
+</select>
                   <Button
                     type="button"
                     variant="ghost"
