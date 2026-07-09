@@ -103,9 +103,25 @@ export default function BulkResult() {
                   <Input data-testid={BULK.resultDate} type="date" className="mt-1.5" value={resultDate} onChange={(e) => setResultDate(e.target.value)} />
                 </div>
                 <div>
-                  <Label className="text-xs font-semibold uppercase tracking-[0.05em] text-slate-500">Results</Label>
-                  <div className="mt-1.5 bg-slate-50 border border-slate-200 rounded-md p-3 space-y-2">
-                    {results.map((r, i) => (
+                 <Label className="text-xs font-semibold uppercase tracking-[0.05em] text-slate-500">
+  Results
+</Label>
+
+<div className="mt-1.5 bg-slate-50 border border-slate-200 rounded-md p-3 space-y-2">
+
+  <div className="grid grid-cols-12 gap-2 mb-2 px-1 text-xs font-semibold uppercase text-slate-500">
+    <div className="col-span-5">
+      Result
+    </div>
+
+    <div className="col-span-6">
+      Value / Remarks (Optional)
+    </div>
+
+    <div className="col-span-1"></div>
+  </div>
+
+  {results.map((r, i) => (
                       <div key={i} className="grid grid-cols-12 gap-2">
                         <select
   className="col-span-5 bg-white border rounded p-2"
@@ -123,7 +139,7 @@ export default function BulkResult() {
   <option value="Indeterminate">Indeterminate</option>
 </select>
                         <Input
-                          placeholder="Value"
+                          placeholder="Value / Remarks"
                           className="col-span-6 bg-white"
                           data-testid={BULK.resultValue(i)}
                           value={r.value}
