@@ -107,13 +107,21 @@ export default function BulkResult() {
                   <div className="mt-1.5 bg-slate-50 border border-slate-200 rounded-md p-3 space-y-2">
                     {results.map((r, i) => (
                       <div key={i} className="grid grid-cols-12 gap-2">
-                        <Input
-                          placeholder="Result Name"
-                          className="col-span-5 bg-white"
-                          data-testid={BULK.resultName(i)}
-                          value={r.name}
-                          onChange={(e) => setResults((prev) => prev.map((x, k) => k === i ? { ...x, name: e.target.value } : x))}
-                        />
+                        <select
+  className="col-span-5 bg-white border rounded p-2"
+  data-testid={BULK.resultName(i)}
+  value={r.name}
+  onChange={(e) =>
+    setResults((prev) =>
+      prev.map((x, k) => k === i ? { ...x, name: e.target.value } : x)
+    )
+  }
+>
+  <option value="">Select result</option>
+  <option value="Positive">Positive</option>
+  <option value="Negative">Negative</option>
+  <option value="Indeterminate">Indeterminate</option>
+</select>
                         <Input
                           placeholder="Value"
                           className="col-span-6 bg-white"
