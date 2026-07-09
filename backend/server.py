@@ -36,7 +36,7 @@ DEFAULT_SAMPLE_TYPES = ["Nasopharyngeal Swab", "Oropharyngeal Swab", "Serum", "P
 # ---------- Models ----------
 class ResultItem(BaseModel):
     name: str
-    value: str
+     value: Optional[str] = None
 
 class LabRecord(BaseModel):
     model_config = ConfigDict(extra="ignore")
