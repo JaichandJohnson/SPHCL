@@ -238,13 +238,19 @@ const Field = ({ label, children }) => (
 );
 
 const SelectField = ({ value, onChange, options, placeholder, testId }) => (
-  <Select value={value} onValueChange={onChange}>
+  <Select
+    key={`${placeholder}-${value}`}
+    value={value || ""}
+    onValueChange={onChange}
+  >
     <SelectTrigger data-testid={testId} className="bg-white">
       <SelectValue placeholder={placeholder} />
     </SelectTrigger>
     <SelectContent>
       {options?.map((o) => (
-        <SelectItem key={o} value={o}>{o}</SelectItem>
+        <SelectItem key={o} value={o}>
+          {o}
+        </SelectItem>
       ))}
     </SelectContent>
   </Select>
