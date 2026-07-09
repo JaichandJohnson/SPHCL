@@ -107,18 +107,13 @@ export default function Records() {
                     {r.results?.length ? (
                       <div className="flex flex-wrap gap-1">
                         {r.results.map((x, i) => (
-                          <Badge key={i} variant="outline" className="text-[10px] font-mono border-slate-200 bg-slate-50">
-                            {x.name}: <span className="ml-1 font-semibold">{x.value}</span>
-                          </Badge>
-                        ))}
-                      </div>
-                    ) : (
-                      <span className="text-xs text-amber-600 font-medium">Pending</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2 tabular-nums text-slate-500">{r.result_date ?? "—"}</td>
-                  <td className="px-3 py-2 text-right">
-                    <div className="inline-flex items-center gap-1">
+  <div key={i} className="text-sm text-slate-700">
+    <span className="font-medium">{x.name}</span>
+    {x.value && (
+      <span className="ml-2 text-slate-500">{x.value}</span>
+    )}
+  </div>
+))}
                       <Button
                         variant="ghost"
                         size="icon"
