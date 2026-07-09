@@ -23,8 +23,6 @@ const empty = () => ({
 
 export default function DataEntry() {
   const { id } = useParams();
-  console.log("Route ID:", id);
-console.log("Edit Mode:", !!id);
   const nav = useNavigate();
   const [form, setForm] = useState(empty());
   const [opts, setOpts] = useState({ test: [], district: [], sample_type: [] });
@@ -146,10 +144,32 @@ console.log("Edit Mode:", !!id);
 </select>
           </Field>
           <Field label="Test *">
-            <SelectField testId={RECORDS.test} value={form.test} onChange={(v) => update("test", v)} options={opts.test} placeholder="Select test" />
+            <select
+  value={form.test}
+  onChange={(e) => update("test", e.target.value)}
+  className="w-full border rounded p-2"
+>
+  <option value="">Select test</option>
+  {opts.test.map((t) => (
+    <option key={t} value={t}>
+      {t}
+    </option>
+  ))}
+</select>
           </Field>
           <Field label="Type of Sample *">
-            <SelectField testId={RECORDS.sampleType} value={form.sample_type} onChange={(v) => update("sample_type", v)} options={opts.sample_type} placeholder="Select sample type" />
+            <select
+  value={form.sample_type}
+  onChange={(e) => update("sample_type", e.target.value)}
+  className="w-full border rounded p-2"
+>
+  <option value="">Select sample type</option>
+  {opts.sample_type.map((s) => (
+    <option key={s} value={s}>
+      {s}
+    </option>
+  ))}
+</select>
           </Field>
           <Field label="Result Date">
             <Input data-testid={RECORDS.resultDate} type="date" value={form.result_date} onChange={(e) => update("result_date", e.target.value)} />
