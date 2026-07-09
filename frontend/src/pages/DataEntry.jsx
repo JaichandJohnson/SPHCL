@@ -30,21 +30,42 @@ console.log("Edit Mode:", !!id);
   const [opts, setOpts] = useState({ test: [], district: [], sample_type: [] });
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    api.get("/options").then((r) => setOpts(r.data)).catch(() => {});
-    if (id) {
-      api.get(`/records/${id}`).then((r) => {
-        const d = r.data;
+ useEffect(() => {
+  const loadData = async () => {
+    try {
+      // Load dropdown options first
+      const optionsResponse = await api.get("/options");
+      setOpts(optionsResponse.data);
+
+      // Then load record if editing
+      if (id) {
+        const recordResponse = await api.get(`/records/${id}`);
+        const d = recordResponse.data;
+
         setForm({
-          ...d,
+          lab_number: d.lab_number || "",
+          date: d.date || "",
+          name: d.name || "",
           age: d.age ?? "",
-          results: d.results?.length ? d.results : [{ name: "Result", value: "" }],
+          district: d.district || "",
+          test: d.test || "",
+          sample_type: d.sample_type || "",
+          results:
+            d.results && d.results.length
+              ? d.results
+              : [{ name: "", value: "" }],
           result_date: d.result_date || "",
           remarks: d.remarks || "",
         });
-      }).catch(() => toast.error("Failed to load record"));
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to load data");
     }
-  }, [id]);
+  };
+
+  loadData();
+}, [id]);
 
   const update = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   const updateResult = (i, k, v) => setForm((f) => {
