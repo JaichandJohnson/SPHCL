@@ -121,7 +121,13 @@ export default function Records() {
     </span>
   )}
 </td>
-                      <Button
+<td className="px-3 py-2 tabular-nums text-slate-500">
+  {r.result_date ?? "—"}
+</td>
+
+<td className="px-3 py-2 text-right">
+  <div className="inline-flex items-center gap-1">
+                        <Button
                         variant="ghost"
                         size="icon"
                         onClick={() => nav(`/entry/${r.id}`)}
