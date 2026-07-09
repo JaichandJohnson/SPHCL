@@ -203,7 +203,7 @@ export default function DataEntry() {
     <div className="col-span-1"></div>
   </div>
 
-  {results.map((r, i) => (
+  {form.results.map((r, i) => (
                 <div key={i} className="grid grid-cols-12 gap-2 items-center">
                   <select
   data-testid={RECORDS.resultName(i)}
