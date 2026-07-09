@@ -90,7 +90,9 @@ export default function DataEntry() {
       const payload = {
         ...form,
         age: form.age === "" ? null : Number(form.age),
-        results: form.results.filter((r) => r.value !== "" || r.name !== ""),
+        results: form.results.filter(
+  (r) => r.name !== ""
+),
         result_date: form.result_date || null,
         remarks: form.remarks || null,
       };
