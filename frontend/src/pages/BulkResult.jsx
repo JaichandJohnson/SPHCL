@@ -48,11 +48,11 @@ export default function BulkResult() {
 
   const apply = async () => {
     if (selectedIds.length === 0) return toast.error("Select at least one sample");
-    if (!results.some((r) => r.value.trim())) return toast.error("Enter at least one result value");
+    if (!results.some((r) => r.name.trim())) return toast.error("Select at least one result");
     try {
       await api.post("/records/bulk-result", {
         ids: selectedIds,
-        results: results.filter((r) => r.value !== ""),
+       results: results.filter((r) => r.name.trim() !== ""),
         result_date: resultDate || null,
       });
       toast.success(`Applied to ${selectedIds.length} samples`);
