@@ -103,17 +103,24 @@ export default function Records() {
                   <td className="px-3 py-2">{r.district}</td>
                   <td className="px-3 py-2">{r.test}</td>
                   <td className="px-3 py-2">{r.sample_type}</td>
-                  <td className="px-3 py-2">
-                    {r.results?.length ? (
-                      <div className="flex flex-wrap gap-1">
-                        {r.results.map((x, i) => (
-  <div key={i} className="text-sm text-slate-700">
-    <span className="font-medium">{x.name}</span>
-    {x.value && (
-      <span className="ml-2 text-slate-500">{x.value}</span>
-    )}
-  </div>
-))}
+                 <td className="px-3 py-2">
+  {r.results?.length ? (
+    <div className="flex flex-wrap gap-1">
+      {r.results.map((x, i) => (
+        <div key={i} className="text-sm text-slate-700">
+          <span className="font-medium">{x.name}</span>
+          {x.value && (
+            <span className="ml-2 text-slate-500">{x.value}</span>
+          )}
+        </div>
+      ))}
+    </div>
+  ) : (
+    <span className="text-xs text-amber-600 font-medium">
+      Pending
+    </span>
+  )}
+</td>
                       <Button
                         variant="ghost"
                         size="icon"
