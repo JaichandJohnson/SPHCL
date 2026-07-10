@@ -37,19 +37,28 @@ export const AuthProvider = ({ children }) => {
       throw new Error("Google credential was not received");
     }
 
-    const response = await api.post("/auth/google", { credential });
-    setUser(response.data);
+     const response = await api.post("/auth/google", { credential });
+
+  if (response.data.session_token) {
+    localStorage.setItem(
+      "session_token",
+      response.data.session_token
+    );
+  }
+
+  setUser(response.data);
     return response.data;
   }, []);
 
   const logout = useCallback(async () => {
     try {
       await api.post("/auth/logout");
-    } catch (_error) {
-      // Clear local state even when the server session has already expired.
-    }
+     } catch (_error) {
+    // Continue with local logout.
+  }
 
-    setUser(null);
+  localStorage.removeItem("session_token");
+  setUser(null);
 
     if (window.google?.accounts?.id) {
       window.google.accounts.id.disableAutoSelect();
