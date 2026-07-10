@@ -396,7 +396,6 @@ async def google_login(payload: GoogleLoginPayload, response: Response):
             "email": email,
             "name": name,
             "picture": picture,
-             "session_token": session_token,
             "email_verified": True,
             "active": True,
             "created_at": now,
@@ -429,6 +428,7 @@ async def google_login(payload: GoogleLoginPayload, response: Response):
         "email": email,
         "name": name,
         "picture": picture,
+        "session_token": session_token,
     }
 
 
