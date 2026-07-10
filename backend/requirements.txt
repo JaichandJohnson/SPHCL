@@ -10,3 +10,4 @@ python-multipart==0.0.9
 pydantic==2.7.4
 email-validator==2.2.0
 google-auth==2.40.3
+requests==2.32.3
