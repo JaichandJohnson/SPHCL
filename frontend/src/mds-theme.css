@@ -1,0 +1,49 @@
+:root {
+  --mds-teal: #0f766e;
+  --mds-teal-dark: #115e59;
+  --mds-indigo: #4338ca;
+  --mds-ink: #0f172a;
+  --mds-muted: #64748b;
+  --mds-surface: #f8fafc;
+}
+
+html {
+  background: linear-gradient(135deg, #f8fafc 0%, #f0fdfa 46%, #eef2ff 100%);
+}
+
+body {
+  color: var(--mds-ink);
+  background:
+    radial-gradient(circle at top right, rgba(99, 102, 241, 0.08), transparent 32rem),
+    radial-gradient(circle at bottom left, rgba(13, 148, 136, 0.08), transparent 30rem),
+    #f8fafc;
+}
+
+::selection {
+  background: rgba(13, 148, 136, 0.22);
+}
+
+button, input, select, textarea {
+  transition: border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
+}
+
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: #14b8a6 !important;
+  box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.13);
+}
+
+table thead {
+  background: linear-gradient(90deg, #f8fafc, #f0fdfa);
+}
+
+.zebra tbody tr:nth-child(even) {
+  background-color: rgba(248, 250, 252, 0.72);
+}
+
+.mds-glass {
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  box-shadow: 0 12px 36px rgba(15, 23, 42, 0.07);
+}
