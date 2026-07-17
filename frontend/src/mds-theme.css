@@ -1,0 +1,75 @@
+:root {
+  --mds-navy: #082f49;
+  --mds-teal: #0f766e;
+  --mds-cyan: #0891b2;
+  --mds-indigo: #4338ca;
+  --mds-surface: #f8fafc;
+}
+
+html,
+body,
+#root,
+.App {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  color: #0f172a;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(8, 145, 178, 0.11), transparent 28rem),
+    radial-gradient(circle at 0% 100%, rgba(15, 118, 110, 0.1), transparent 30rem),
+    #f8fafc;
+}
+
+::selection {
+  background: rgba(20, 184, 166, 0.24);
+}
+
+button,
+input,
+select,
+textarea {
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease,
+    background-color 150ms ease,
+    color 150ms ease,
+    transform 150ms ease;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: #14b8a6 !important;
+  box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.14);
+}
+
+table thead {
+  background: linear-gradient(90deg, #ecfeff 0%, #eef2ff 100%);
+}
+
+table thead th {
+  color: #164e63 !important;
+}
+
+.zebra tbody tr:nth-child(even) {
+  background-color: rgba(248, 250, 252, 0.86);
+}
+
+.zebra tbody tr:hover {
+  background-color: rgba(204, 251, 241, 0.5);
+}
+
+[data-radix-popper-content-wrapper] {
+  z-index: 60 !important;
+}
+
+/* Safety net for legacy Emergent badge markup, while index.html is also cleaned. */
+a[href*="emergent.sh"],
+a[href*="app.emergent"],
+[id*="emergent"],
+[class*="emergent"] {
+  display: none !important;
+}
