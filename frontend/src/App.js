@@ -13,6 +13,7 @@ import Reports from "@/pages/Reports";
 import BulkImport from "@/pages/BulkImport";
 import BulkResult from "@/pages/BulkResult";
 import Settings from "@/pages/Settings";
+import BackupStatus from "@/pages/BackupStatus";
 
 function AppRouter() {
   const location = useLocation();
@@ -38,8 +39,10 @@ function AppRouter() {
         <Route path="/import" element={<BulkImport />} />
         <Route path="/bulk-result" element={<BulkResult />} />
         <Route path="/settings" element={<Settings />} />
+        <Route path="/backup" element={<BackupStatus />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
+      
     </Routes>
   );
 }
