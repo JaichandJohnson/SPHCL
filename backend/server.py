@@ -442,6 +442,7 @@ async def google_login(payload: GoogleLoginPayload, response: Response):
         "email": email,
         "name": name,
         "picture": picture,
+         "session_token": session_token,
     }
 
 
