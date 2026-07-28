@@ -13,6 +13,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional, Any
 from datetime import datetime, timezone, timedelta
+from backup_router import create_backup_router
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -467,6 +468,8 @@ async def stats(user=Depends(get_current_user)):
 @api_router.get("/")
 async def root():
     return {"service": "SPHCL Molecular Diagnosis - Lab Data Management"}
+backup_router = create_backup_router(db, get_current_user)
+app.include_router(backup_router)
 
 app.include_router(api_router)
 
