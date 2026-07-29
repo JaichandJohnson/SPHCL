@@ -388,7 +388,7 @@ if allowed_emails and email not in allowed_emails:
         detail="Access denied. Your Google account is not authorized to use the MDS Laboratory Information Management System."
     )
 existing = await db.users.find_one({"email": email}, {"_id": 0})
-    now = now_iso()
+now = now_iso()
 
     if existing:
         user_id = existing["user_id"]
