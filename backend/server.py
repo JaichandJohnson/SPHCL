@@ -376,17 +376,16 @@ async def google_login(payload: GoogleLoginPayload, response: Response):
     if not email or not email_verified:
         raise HTTPException(status_code=401, detail="Google email is not verified")
 
-       allowed_emails = [
-        item.strip().lower()
-        for item in os.environ.get("ALLOWED_EMAILS", "").split(",")
-        if item.strip()
-    ]
+allowed_emails = [
+    item.strip().lower()
+    for item in os.environ.get("ALLOWED_EMAILS", "").split(",")
+    if item.strip()
+]
 
-    if allowed_emails:
-    if email not in allowed_emails:
-        raise HTTPException(
-            status_code=403,
-            detail="Access denied. Your Google account is not authorized to use the MDS Laboratory Information Management System."
+if allowed_emails and email not in allowed_emails:
+    raise HTTPException(
+        status_code=403,
+        detail="Access denied. Your Google account is not authorized to use the MDS Laboratory Information Management System."
         )
     existing = await db.users.find_one({"email": email}, {"_id": 0})
     now = now_iso()
