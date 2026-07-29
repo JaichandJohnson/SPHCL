@@ -31,7 +31,10 @@ def now_iso():
 
 def client_config():
     client_id = os.environ.get("GOOGLE_DRIVE_CLIENT_ID") or os.environ.get("GOOGLE_CLIENT_ID")
-    secret = os.environ.get("GOOGLE_DRIVE_CLIENT_SECRET")
+    secret = (
+        os.environ.get("GOOGLE_DRIVE_CLIENT_SECRET")
+        or os.environ.get("GOOGLE_CLIENT_SECRET")
+    )
     redirect = os.environ.get("GOOGLE_DRIVE_REDIRECT_URI")
     if not client_id or not secret or not redirect:
         raise HTTPException(status_code=500, detail="Google Drive OAuth is not configured")
@@ -47,7 +50,7 @@ def client_config():
 
 
 def cipher():
-    key = os.environ.get("BACKUP_TOKEN_ENCRYPTION_KEY", "")
+    key = os.environ.get("BACKUP_ENCRYPTION_KEY", "")
     try:
         return Fernet(key.encode())
     except Exception as exc:
