@@ -401,7 +401,7 @@ if existing:
                 "last_login_at": now,
             }},
         )
-else:
+    else:
         user_id = f"user_{uuid.uuid4().hex[:12]}"
         await db.users.insert_one({
             "user_id": user_id,
