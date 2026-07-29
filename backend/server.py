@@ -357,7 +357,10 @@ class GoogleLoginPayload(BaseModel):
 async def google_login(payload: GoogleLoginPayload, response: Response):
     client_id = os.environ.get("GOOGLE_CLIENT_ID")
     if not client_id:
-        raise HTTPException(status_code=500, detail="Google authentication is not configured")
+        raise HTTPException(
+            status_code=500,
+            detail="Google authentication is not configured",
+        )
 
     try:
         token_data = id_token.verify_oauth2_token(
@@ -366,7 +369,10 @@ async def google_login(payload: GoogleLoginPayload, response: Response):
             client_id,
         )
     except ValueError:
-        raise HTTPException(status_code=401, detail="Invalid Google credential")
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid Google credential",
+        )
 
     email = str(token_data.get("email") or "").strip().lower()
     name = str(token_data.get("name") or email).strip()
@@ -374,56 +380,76 @@ async def google_login(payload: GoogleLoginPayload, response: Response):
     email_verified = token_data.get("email_verified", False)
 
     if not email or not email_verified:
-        raise HTTPException(status_code=401, detail="Google email is not verified")
+        raise HTTPException(
+            status_code=401,
+            detail="Google email is not verified",
+        )
 
-allowed_emails = [
-    item.strip().lower()
-    for item in os.environ.get("ALLOWED_EMAILS", "").split(",")
-    if item.strip()
-]
+    allowed_emails = [
+        item.strip().lower()
+        for item in os.environ.get("ALLOWED_EMAILS", "").split(",")
+        if item.strip()
+    ]
 
-if allowed_emails and email not in allowed_emails:
-    raise HTTPException(
-        status_code=403,
-        detail="Access denied. Your Google account is not authorized to use the MDS Laboratory Information Management System."
+    if allowed_emails and email not in allowed_emails:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Access denied. Your Google account is not authorized "
+                "to use the MDS Laboratory Information Management System."
+            ),
+        )
+
+    existing = await db.users.find_one(
+        {"email": email},
+        {"_id": 0},
     )
-existing = await db.users.find_one({"email": email}, {"_id": 0})
-now = now_iso()
+    now = now_iso()
 
-if existing:
+    if existing:
         user_id = existing["user_id"]
+
         await db.users.update_one(
             {"user_id": user_id},
-            {"$set": {
+            {
+                "$set": {
+                    "name": name,
+                    "picture": picture,
+                    "email_verified": True,
+                    "last_login_at": now,
+                }
+            },
+        )
+    else:
+        user_id = f"user_{uuid.uuid4().hex[:12]}"
+
+        await db.users.insert_one(
+            {
+                "user_id": user_id,
+                "email": email,
                 "name": name,
                 "picture": picture,
                 "email_verified": True,
+                "created_at": now,
                 "last_login_at": now,
-            }},
+            }
         )
-else:
-        user_id = f"user_{uuid.uuid4().hex[:12]}"
-        await db.users.insert_one({
-            "user_id": user_id,
-            "email": email,
-            "name": name,
-            "picture": picture,
-            "email_verified": True,
-            "active": True,
-            "created_at": now,
-            "last_login_at": now,
-        })
 
     session_token = uuid.uuid4().hex + uuid.uuid4().hex
     expires_at = datetime.now(timezone.utc) + timedelta(days=7)
 
-    await db.user_sessions.delete_many({"user_id": user_id})
-    await db.user_sessions.insert_one({
-        "user_id": user_id,
-        "session_token": session_token,
-        "expires_at": expires_at.isoformat(),
-        "created_at": now,
-    })
+    await db.user_sessions.delete_many(
+        {"user_id": user_id}
+    )
+
+    await db.user_sessions.insert_one(
+        {
+            "user_id": user_id,
+            "session_token": session_token,
+            "expires_at": expires_at.isoformat(),
+            "created_at": now,
+        }
+    )
 
     response.set_cookie(
         key="session_token",
@@ -452,8 +478,6 @@ async def me(user=Depends(get_current_user)):
         "name": user["name"],
         "picture": user.get("picture", ""),
     }
-
-
 @api_router.post("/auth/logout")
 async def logout(request: Request, response: Response):
     token = request.cookies.get("session_token")
