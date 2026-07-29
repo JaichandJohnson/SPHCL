@@ -390,7 +390,7 @@ if allowed_emails and email not in allowed_emails:
 existing = await db.users.find_one({"email": email}, {"_id": 0})
 now = now_iso()
 
-    if existing:
+if existing:
         user_id = existing["user_id"]
         await db.users.update_one(
             {"user_id": user_id},
@@ -401,7 +401,7 @@ now = now_iso()
                 "last_login_at": now,
             }},
         )
-    else:
+else:
         user_id = f"user_{uuid.uuid4().hex[:12]}"
         await db.users.insert_one({
             "user_id": user_id,
