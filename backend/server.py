@@ -1266,6 +1266,8 @@ async def stats(user=Depends(get_current_user)):
 @api_router.get("/")
 async def root():
     return {"service": "SPHCL Molecular Diagnosis - Lab Data Management"}
+backup_router = create_backup_router(db, get_current_user)
+app.include_router(backup_router)
 
 
 app.include_router(api_router)
