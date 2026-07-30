@@ -19,7 +19,8 @@ from googleapiclient.http import MediaIoBaseUpload
 
 SCOPES = [
     "openid",
-    "email",
+    "https://www.googleapis.com/auth/userinfo.email",
+    "https://www.googleapis.com/auth/userinfo.profile",
     "https://www.googleapis.com/auth/drive.file",
 ]
 _scheduler = None
