@@ -1,255 +1,388 @@
+import asyncio
 import io
 import json
 import os
+import secrets
 import zipfile
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict
 
-from bson import json_util
-from google.oauth2 import service_account
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from cryptography.fernet import Fernet, InvalidToken
+from fastapi import HTTPException
+from fastapi.responses import RedirectResponse
+from google.auth.transport.requests import Request as GoogleRequest
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
-from motor.motor_asyncio import AsyncIOMotorClient
 
-
-SCOPES = ["https://www.googleapis.com/auth/drive"]
-DEFAULT_COLLECTIONS = [
-    "records",
-    "datasets",
-    "options",
-    "panels",
-    "users",
-    "backup_runs",
+SCOPES = [
+    "openid",
+    "https://www.googleapis.com/auth/userinfo.email",
+    "https://www.googleapis.com/auth/userinfo.profile",
+    "https://www.googleapis.com/auth/drive.file",
 ]
+_scheduler = None
 
 
-def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+def now_iso():
+    return datetime.now(timezone.utc).isoformat()
 
 
-def _service_account_info() -> Dict[str, Any]:
-    raw = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON", "").strip()
-    if not raw:
-        raise RuntimeError("GOOGLE_SERVICE_ACCOUNT_JSON is not configured")
-
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError as error:
-        raise RuntimeError(
-            "GOOGLE_SERVICE_ACCOUNT_JSON is not valid JSON"
-        ) from error
-
-
-def drive_service():
-    credentials = service_account.Credentials.from_service_account_info(
-        _service_account_info(),
-        scopes=SCOPES,
+def client_config():
+    client_id = os.environ.get("GOOGLE_DRIVE_CLIENT_ID") or os.environ.get("GOOGLE_CLIENT_ID")
+    secret = (
+        os.environ.get("GOOGLE_DRIVE_CLIENT_SECRET")
+        or os.environ.get("GOOGLE_CLIENT_SECRET")
     )
+    redirect = os.environ.get("GOOGLE_DRIVE_REDIRECT_URI")
+    if not client_id or not secret or not redirect:
+        raise HTTPException(status_code=500, detail="Google Drive OAuth is not configured")
+    return {
+        "web": {
+            "client_id": client_id,
+            "client_secret": secret,
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "redirect_uris": [redirect],
+        }
+    }
+
+
+def cipher():
+    key = os.environ.get("BACKUP_ENCRYPTION_KEY", "")
+    try:
+        return Fernet(key.encode())
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Invalid backup encryption key") from exc
+
+
+def encrypt_credentials(credentials):
+    payload = {
+        "token": credentials.token,
+        "refresh_token": credentials.refresh_token,
+        "token_uri": credentials.token_uri,
+        "client_id": credentials.client_id,
+        "client_secret": credentials.client_secret,
+        "scopes": list(credentials.scopes or SCOPES),
+    }
+    return cipher().encrypt(json.dumps(payload).encode()).decode()
+
+
+def load_credentials(document):
+    try:
+        payload = json.loads(
+            cipher().decrypt(document["encrypted_credentials"].encode()).decode()
+        )
+    except (InvalidToken, ValueError, KeyError) as exc:
+        raise HTTPException(status_code=500, detail="Stored Drive authorization is unreadable") from exc
+
+    credentials = Credentials(**payload)
+    if credentials.expired and credentials.refresh_token:
+        credentials.refresh(GoogleRequest())
+    return credentials
+
+
+def json_safe(value):
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if value.__class__.__name__ == "ObjectId":
+        return str(value)
+    if isinstance(value, dict):
+        return {str(key): json_safe(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [json_safe(item) for item in value]
+    return value
+
+
+async def create_archive(db):
+    excluded = {"user_sessions", "backup_oauth_states"}
+    names = [
+        name for name in await db.list_collection_names()
+        if name not in excluded and not name.startswith("system.")
+    ]
+    collections = {}
+    counts = {}
+    total = 0
+
+    for name in sorted(names):
+        documents = await db[name].find({}).to_list(length=None)
+        safe = [json_safe(document) for document in documents]
+        collections[name] = safe
+        counts[name] = len(safe)
+        total += len(safe)
+
+    metadata = {
+        "application": "MDS Laboratory Information Management System",
+        "version": os.environ.get("APP_VERSION", "2.2"),
+        "created_at_utc": now_iso(),
+        "database_name": os.environ.get("DB_NAME", ""),
+        "collection_count": len(names),
+        "total_documents": total,
+        "collection_counts": counts,
+        "excluded_collections": sorted(excluded),
+    }
+
+    stream = io.BytesIO()
+    with zipfile.ZipFile(stream, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("backup.json", json.dumps({"collections": collections}, indent=2))
+        archive.writestr("metadata.json", json.dumps(metadata, indent=2))
+        archive.writestr("version.txt", metadata["version"])
+    return stream.getvalue(), metadata
+
+
+def drive_service(credentials):
     return build("drive", "v3", credentials=credentials, cache_discovery=False)
 
 
-def configured_folder_id() -> str:
-    folder_id = os.environ.get("GOOGLE_DRIVE_FOLDER_ID", "").strip()
-    if not folder_id:
-        raise RuntimeError("GOOGLE_DRIVE_FOLDER_ID is not configured")
-    return folder_id
+def folder_id(service):
+    configured = os.environ.get("GOOGLE_DRIVE_FOLDER_ID", "").strip()
+    if configured:
+        return configured
+
+    name = os.environ.get("GOOGLE_DRIVE_FOLDER_NAME", "MDS LIMS Backups")
+    escaped = name.replace("'", "\\'")
+    found = service.files().list(
+        q=f"name='{escaped}' and mimeType='application/vnd.google-apps.folder' and trashed=false",
+        spaces="drive",
+        fields="files(id,name)",
+    ).execute().get("files", [])
+    if found:
+        return found[0]["id"]
+
+    return service.files().create(
+        body={"name": name, "mimeType": "application/vnd.google-apps.folder"},
+        fields="id",
+    ).execute()["id"]
 
 
-def configured_collections() -> List[str]:
-    value = os.environ.get("BACKUP_COLLECTIONS", "").strip()
-    if not value:
-        return DEFAULT_COLLECTIONS
-    return [item.strip() for item in value.split(",") if item.strip()]
+def upload(credentials, data, filename):
+    service = drive_service(credentials)
+    folder = folder_id(service)
+    media = MediaIoBaseUpload(io.BytesIO(data), mimetype="application/zip")
+    created = service.files().create(
+        body={"name": filename, "parents": [folder]},
+        media_body=media,
+        fields="id,name,size,createdTime,webViewLink",
+    ).execute()
+    return {"folder_id": folder, **created}
 
 
-async def export_database_zip(db) -> tuple[bytes, str, Dict[str, int]]:
-    timestamp = utc_now().strftime("%Y-%m-%d_%H%M%S_UTC")
-    filename = f"MDS_LIMS_Backup_{timestamp}.zip"
-    buffer = io.BytesIO()
-    counts: Dict[str, int] = {}
-
-    with zipfile.ZipFile(
-        buffer,
-        mode="w",
-        compression=zipfile.ZIP_DEFLATED,
-        compresslevel=9,
-    ) as archive:
-        for collection_name in configured_collections():
-            documents = await db[collection_name].find({}).to_list(length=None)
-            counts[collection_name] = len(documents)
-
-            payload = json_util.dumps(
-                documents,
-                ensure_ascii=False,
-                indent=2,
-            )
-            archive.writestr(
-                f"collections/{collection_name}.json",
-                payload,
-            )
-
-        metadata = {
-            "application": "MDS Laboratory Information Management System",
-            "created_at_utc": utc_now().isoformat(),
-            "database_name": os.environ.get("DB_NAME", ""),
-            "collections": counts,
-            "format_version": 1,
-        }
-        archive.writestr(
-            "metadata.json",
-            json.dumps(metadata, ensure_ascii=False, indent=2),
-        )
-
-    return buffer.getvalue(), filename, counts
+def list_files(credentials, limit=30):
+    service = drive_service(credentials)
+    folder = folder_id(service)
+    files = service.files().list(
+        q=f"'{folder}' in parents and trashed=false and name contains 'MDS_LIMS_Backup_'",
+        orderBy="createdTime desc",
+        pageSize=min(max(limit, 1), 100),
+        fields="files(id,name,size,createdTime,webViewLink)",
+    ).execute().get("files", [])
+    return files
 
 
-def upload_to_drive(data: bytes, filename: str) -> Dict[str, Any]:
-    service = drive_service()
-    folder_id = configured_folder_id()
+def apply_retention(credentials):
+    keep = int(os.environ.get("BACKUP_RETENTION_COUNT", "30"))
+    service = drive_service(credentials)
+    folder = folder_id(service)
+    files = service.files().list(
+        q=f"'{folder}' in parents and trashed=false and name contains 'MDS_LIMS_Backup_'",
+        orderBy="createdTime desc",
+        pageSize=100,
+        fields="files(id,name,createdTime)",
+    ).execute().get("files", [])
+    for item in files[keep:]:
+        service.files().delete(fileId=item["id"]).execute()
+    return max(0, len(files) - keep)
 
-    media = MediaIoBaseUpload(
-        io.BytesIO(data),
-        mimetype="application/zip",
-        resumable=True,
+
+async def perform_backup(db, trigger):
+    document = await db.backup_settings.find_one({"key": "google_drive"}, {"_id": 0})
+    if not document or not document.get("encrypted_credentials"):
+        raise HTTPException(status_code=409, detail="Google Drive is not connected")
+
+    credentials = await asyncio.to_thread(load_credentials, document)
+    archive, metadata = await create_archive(db)
+    filename = f"MDS_LIMS_Backup_{datetime.now(timezone.utc).strftime('%Y-%m-%d_%H%M%S')}.zip"
+    uploaded = await asyncio.to_thread(upload, credentials, archive, filename)
+    deleted = await asyncio.to_thread(apply_retention, credentials)
+
+    update = {
+        "last_backup_at": now_iso(),
+        "last_backup_status": "success",
+        "last_backup_name": filename,
+        "last_backup_size": uploaded.get("size") or len(archive),
+        "last_backup_trigger": trigger,
+        "folder_id": uploaded.get("folder_id"),
+        "last_error": None,
+        "updated_at": now_iso(),
+    }
+    await db.backup_settings.update_one(
+        {"key": "google_drive"}, {"$set": update}, upsert=True
     )
-    file = (
-        service.files()
-        .create(
-            body={
-                "name": filename,
-                "parents": [folder_id],
-                "description": "Automatic MDS LIMS database backup",
-            },
-            media_body=media,
-            fields="id,name,size,createdTime,webViewLink",
-            supportsAllDrives=True,
-        )
-        .execute()
-    )
-    return file
-
-
-def list_drive_backups(limit: int = 20) -> List[Dict[str, Any]]:
-    service = drive_service()
-    folder_id = configured_folder_id()
-    query = (
-        f"'{folder_id}' in parents and trashed = false "
-        "and name contains 'MDS_LIMS_Backup_'"
-    )
-    response = (
-        service.files()
-        .list(
-            q=query,
-            orderBy="createdTime desc",
-            pageSize=min(max(limit, 1), 100),
-            fields="files(id,name,size,createdTime,modifiedTime,webViewLink)",
-            supportsAllDrives=True,
-            includeItemsFromAllDrives=True,
-        )
-        .execute()
-    )
-    return response.get("files", [])
-
-
-def enforce_retention() -> int:
-    retention_count = max(
-        1,
-        int(os.environ.get("BACKUP_RETENTION_COUNT", "30")),
-    )
-    files = list_drive_backups(limit=100)
-    old_files = files[retention_count:]
-    service = drive_service()
-
-    deleted = 0
-    for file in old_files:
-        service.files().delete(
-            fileId=file["id"],
-            supportsAllDrives=True,
-        ).execute()
-        deleted += 1
-    return deleted
-
-
-async def run_backup(db, trigger: str = "scheduled") -> Dict[str, Any]:
-    started_at = utc_now()
-    run_id = f"backup_{started_at.strftime('%Y%m%d%H%M%S%f')}"
-    run_doc: Dict[str, Any] = {
-        "id": run_id,
+    await db.backup_logs.insert_one({
+        "id": secrets.token_hex(8),
+        "created_at": now_iso(),
+        "status": "success",
         "trigger": trigger,
-        "status": "running",
-        "started_at": started_at.isoformat(),
-    }
-    await db.backup_runs.insert_one(run_doc.copy())
+        "filename": filename,
+        "size": update["last_backup_size"],
+        "metadata": metadata,
+        "retention_deleted": deleted,
+    })
+    return {"ok": True, "filename": filename, "file": uploaded, "metadata": metadata}
 
+
+async def scheduled_backup(db):
+    if os.environ.get("ENABLE_GOOGLE_DRIVE_BACKUP", "false").lower() != "true":
+        return
     try:
-        data, filename, counts = await export_database_zip(db)
-        drive_file = upload_to_drive(data, filename)
-        deleted_count = enforce_retention()
-        completed_at = utc_now()
-
-        completed = {
-            "status": "success",
-            "completed_at": completed_at.isoformat(),
-            "filename": filename,
-            "size_bytes": len(data),
-            "collection_counts": counts,
-            "drive_file_id": drive_file.get("id"),
-            "drive_url": drive_file.get("webViewLink"),
-            "retention_deleted": deleted_count,
-        }
-        await db.backup_runs.update_one(
-            {"id": run_id},
-            {"$set": completed},
+        await perform_backup(db, "scheduled")
+    except Exception as exc:
+        await db.backup_settings.update_one(
+            {"key": "google_drive"},
+            {"$set": {
+                "last_backup_at": now_iso(),
+                "last_backup_status": "failed",
+                "last_error": str(exc),
+                "updated_at": now_iso(),
+            }},
+            upsert=True,
         )
-        return {"id": run_id, **run_doc, **completed}
-    except Exception as error:
-        failed = {
-            "status": "failed",
-            "completed_at": utc_now().isoformat(),
-            "error": str(error),
-        }
-        await db.backup_runs.update_one(
-            {"id": run_id},
-            {"$set": failed},
+
+
+def register_backup(app, router, db, get_current_user):
+    from fastapi import Depends, Request
+    from apscheduler.triggers.cron import CronTrigger
+
+    @router.get("/backup/google/connect-url")
+    async def connect_url(user=Depends(get_current_user)):
+        state = secrets.token_urlsafe(32)
+        await db.backup_oauth_states.insert_one({
+            "state": state,
+            "user_id": user["user_id"],
+            "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=15)).isoformat(),
+        })
+        flow = Flow.from_client_config(
+            client_config(),
+            scopes=SCOPES,
+            redirect_uri=os.environ["GOOGLE_DRIVE_REDIRECT_URI"],
         )
-        raise
+        url, _ = flow.authorization_url(
+            access_type="offline",
+            include_granted_scopes="true",
+            prompt="consent",
+            state=state,
+        )
+        return {"authorization_url": url}
 
+    @router.get("/backup/google/callback")
+    async def callback(request: Request, code: str, state: str):
+        state_doc = await db.backup_oauth_states.find_one({"state": state}, {"_id": 0})
+        if not state_doc:
+            raise HTTPException(status_code=400, detail="Invalid OAuth state")
 
-async def get_backup_status(db) -> Dict[str, Any]:
-    latest = await db.backup_runs.find_one(
-        {},
-        {"_id": 0},
-        sort=[("started_at", -1)],
-    )
-    recent = await db.backup_runs.find(
-        {},
-        {"_id": 0},
-    ).sort("started_at", -1).limit(10).to_list(10)
+        expires = datetime.fromisoformat(state_doc["expires_at"])
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        if expires < datetime.now(timezone.utc):
+            raise HTTPException(status_code=400, detail="OAuth state expired")
 
-    enabled = (
-        os.environ.get("ENABLE_GOOGLE_DRIVE_BACKUP", "false")
-        .strip()
-        .lower()
-        == "true"
-    )
+        flow = Flow.from_client_config(
+            client_config(),
+            scopes=SCOPES,
+            redirect_uri=os.environ["GOOGLE_DRIVE_REDIRECT_URI"],
+            state=state,
+        )
+        flow.fetch_token(code=code)
+        credentials = flow.credentials
 
-    return {
-        "enabled": enabled,
-        "configured": bool(
-            os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON")
-            and os.environ.get("GOOGLE_DRIVE_FOLDER_ID")
-        ),
-        "schedule": os.environ.get("BACKUP_SCHEDULE_LABEL", "Daily at 02:00 IST"),
-        "retention_count": int(
-            os.environ.get("BACKUP_RETENTION_COUNT", "30")
-        ),
-        "latest": latest,
-        "recent": recent,
-    }
+        previous = await db.backup_settings.find_one({"key": "google_drive"}, {"_id": 0})
+        if not credentials.refresh_token and previous:
+            old = load_credentials(previous)
+            credentials.refresh_token = old.refresh_token
+        if not credentials.refresh_token:
+            raise HTTPException(status_code=400, detail="Google did not return a refresh token")
 
+        await db.backup_settings.update_one(
+            {"key": "google_drive"},
+            {"$set": {
+                "key": "google_drive",
+                "connected": True,
+                "connected_by_user_id": state_doc["user_id"],
+                "encrypted_credentials": encrypt_credentials(credentials),
+                "connected_at": now_iso(),
+                "updated_at": now_iso(),
+            }},
+            upsert=True,
+        )
+        await db.backup_oauth_states.delete_one({"state": state})
+        frontend = os.environ.get("FRONTEND_URL", "").rstrip("/")
+        return RedirectResponse(f"{frontend}/backup?drive=connected")
 
-async def connect_database():
-    mongo_url = os.environ["MONGO_URL"]
-    db_name = os.environ["DB_NAME"]
-    client = AsyncIOMotorClient(mongo_url)
-    return client, client[db_name]
+    @router.get("/backup/status")
+    async def status(user=Depends(get_current_user)):
+        document = await db.backup_settings.find_one(
+            {"key": "google_drive"},
+            {"_id": 0, "encrypted_credentials": 0},
+        )
+        return {
+            "connected": bool(document and document.get("connected")),
+            "automatic_enabled": os.environ.get(
+                "ENABLE_GOOGLE_DRIVE_BACKUP", "false"
+            ).lower() == "true",
+            "schedule": (
+                f"{int(os.environ.get('BACKUP_HOUR', '2')):02d}:"
+                f"{int(os.environ.get('BACKUP_MINUTE', '0')):02d}"
+            ),
+            "timezone": os.environ.get("BACKUP_TIMEZONE", "Asia/Kolkata"),
+            "retention_count": int(os.environ.get("BACKUP_RETENTION_COUNT", "30")),
+            **(document or {}),
+        }
+
+    @router.get("/backup/history")
+    async def history(limit: int = 30, user=Depends(get_current_user)):
+        document = await db.backup_settings.find_one({"key": "google_drive"}, {"_id": 0})
+        if not document:
+            return {"items": []}
+        credentials = await asyncio.to_thread(load_credentials, document)
+        files = await asyncio.to_thread(list_files, credentials, limit)
+        return {"items": files}
+
+    @router.post("/backup/run")
+    async def run(user=Depends(get_current_user)):
+        return await perform_backup(db, "manual")
+
+    @router.post("/backup/disconnect")
+    async def disconnect(user=Depends(get_current_user)):
+        await db.backup_settings.delete_one({"key": "google_drive"})
+        return {"ok": True}
+
+    @app.on_event("startup")
+    async def start_scheduler():
+        global _scheduler
+        if _scheduler:
+            return
+        timezone_name = os.environ.get("BACKUP_TIMEZONE", "Asia/Kolkata")
+        _scheduler = AsyncIOScheduler(timezone=timezone_name)
+        _scheduler.add_job(
+            scheduled_backup,
+            CronTrigger(
+                hour=int(os.environ.get("BACKUP_HOUR", "2")),
+                minute=int(os.environ.get("BACKUP_MINUTE", "0")),
+                timezone=timezone_name,
+            ),
+            args=[db],
+            id="mds_drive_backup",
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+        )
+        _scheduler.start()
+
+    @app.on_event("shutdown")
+    async def stop_scheduler():
+        global _scheduler
+        if _scheduler:
+            _scheduler.shutdown(wait=False)
+            _scheduler = None

@@ -1,7 +1,14 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  useCallback,
+} from "react";
 import { api } from "@/lib/api";
 
 const AuthContext = createContext(null);
+
 export const useAuth = () => useContext(AuthContext);
 
 export const AuthProvider = ({ children }) => {
@@ -10,32 +17,67 @@ export const AuthProvider = ({ children }) => {
 
   const checkAuth = useCallback(async () => {
     try {
-      const r = await api.get("/auth/me");
-      setUser(r.data);
-    } catch (_e) {
+      const response = await api.get("/auth/me");
+      setUser(response.data);
+      return response.data;
+    } catch (_error) {
       setUser(null);
+      return null;
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    // If returning from OAuth callback, skip check - AuthCallback handles it
-    if (typeof window !== "undefined" && window.location.hash?.includes("session_id=")) {
-      setLoading(false);
-      return;
-    }
     checkAuth();
   }, [checkAuth]);
 
-  const logout = async () => {
-    try { await api.post("/auth/logout"); } catch (_e) { /* ignore */ }
-    setUser(null);
+  const loginWithGoogle = useCallback(async (credential) => {
+    if (!credential) {
+      throw new Error("Google credential was not received");
+    }
+
+     const response = await api.post("/auth/google", { credential });
+
+  if (response.data.session_token) {
+    localStorage.setItem(
+      "session_token",
+      response.data.session_token
+    );
+  }
+
+  setUser(response.data);
+    return response.data;
+  }, []);
+
+  const logout = useCallback(async () => {
+    try {
+      await api.post("/auth/logout");
+     } catch (_error) {
+    // Continue with local logout.
+  }
+
+  localStorage.removeItem("session_token");
+  setUser(null);
+
+    if (window.google?.accounts?.id) {
+      window.google.accounts.id.disableAutoSelect();
+    }
+
     window.location.href = "/";
-  };
+  }, []);
 
   return (
-    <AuthContext.Provider value={{ user, setUser, loading, checkAuth, logout }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        setUser,
+        loading,
+        checkAuth,
+        loginWithGoogle,
+        logout,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { scheduleDriveSync } from "@/lib/drive";
@@ -8,104 +8,279 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
-import { Plus, Trash, FloppyDisk, X } from "@phosphor-icons/react";
+import { CheckCircle, MagnifyingGlass, Trash, FloppyDisk, X } from "@phosphor-icons/react";
 import { RECORDS } from "@/constants/testIds";
 
-const empty = () => ({
-  lab_number: "", date: new Date().toISOString().slice(0, 10),
-  name: "", age: "", district: "", test: "", sample_type: "",
-  results: [{ name: "", value: "" }],
-  result_date: "", remarks: "",
+const DATASETS = [
+  { key: "routine", label: "Routine", prefix: "MDS" },
+  { key: "mr_surveillance", label: "MR Surveillance", prefix: "MR" },
+  { key: "diphtheria", label: "Diphtheria", prefix: "WD" },
+  { key: "pertussis", label: "Pertussis", prefix: "WP" },
+  { key: "rabies", label: "Rabies", prefix: "R" },
+  { key: "fla", label: "FLA", prefix: "FLA" },
+  { key: "special_serology", label: "Special Serology", prefix: "VPD" },
+];
+
+const RESULT_OPTIONS = ["Positive", "Negative", "Indeterminate"];
+
+const getSavedDataset = () => localStorage.getItem("mds_last_dataset") || "routine";
+
+const empty = (dataset = getSavedDataset()) => ({
+  dataset,
+  lab_number: "",
+  date: new Date().toISOString().slice(0, 10),
+  name: "",
+  age: "",
+  district: "",
+  sample_type: "",
+  selected_test: "",
+  tests: [],
+  result_date: "",
+  remarks: "",
 });
+
+const normalizeTests = (record) => {
+  if (Array.isArray(record.tests) && record.tests.length) {
+    return record.tests.map((t) => ({
+      test: t.test || t.name || "",
+      result1: t.result1 || t.result_1 || t.result || "",
+      result2: t.result2 || t.result_2 || "",
+      result_date: t.result_date || record.result_date || "",
+    }));
+  }
+
+  // Backward compatibility with old record structure.
+  if (record.test) {
+    const firstResult = Array.isArray(record.results) && record.results.length ? record.results[0] : {};
+    return [
+      {
+        test: record.test,
+        result1: firstResult.name || "",
+        result2: firstResult.value || "",
+        result_date: record.result_date || "",
+      },
+    ];
+  }
+
+  return [];
+};
 
 export default function DataEntry() {
   const { id } = useParams();
   const nav = useNavigate();
   const [form, setForm] = useState(empty());
-  const [opts, setOpts] = useState({ test: [], district: [], sample_type: [] });
+  const [opts, setOpts] = useState({ test: [], tests_by_dataset: {}, panels_by_dataset: {}, district: [], sample_type: [] });
   const [saving, setSaving] = useState(false);
+  const [testSearch, setTestSearch] = useState("");
+  const nameRef = useRef(null);
 
- useEffect(() => {
-  const loadData = async () => {
-    try {
-      // Load dropdown options first
-      const optionsResponse = await api.get("/options");
-      setOpts(optionsResponse.data);
+  const selectedDataset = DATASETS.find((d) => d.key === form.dataset) || DATASETS[0];
 
-      // Then load record if editing
-      if (id) {
-        const recordResponse = await api.get(`/records/${id}`);
-        const d = recordResponse.data;
+  const testOptions = useMemo(() => {
+    const datasetTests = opts.tests_by_dataset?.[form.dataset];
+    return Array.isArray(datasetTests) && datasetTests.length ? datasetTests : opts.test || [];
+  }, [opts, form.dataset]);
 
-        setForm({
-          lab_number: d.lab_number || "",
-          date: d.date || "",
-          name: d.name || "",
-          age: d.age ?? "",
-          district: d.district || "",
-          test: d.test || "",
-          sample_type: d.sample_type || "",
-          results:
-            d.results && d.results.length
-              ? d.results
-              : [{ name: "", value: "" }],
-          result_date: d.result_date || "",
-          remarks: d.remarks || "",
-        });
-      }
-    } catch (err) {
-      console.error(err);
-      toast.error("Failed to load data");
+  const sampleOptions = useMemo(() => {
+    const datasetSamples = opts.sample_types_by_dataset?.[form.dataset];
+    return Array.isArray(datasetSamples) && datasetSamples.length
+      ? datasetSamples
+      : opts.sample_type || [];
+  }, [opts, form.dataset]);
+
+  const panelOptions = useMemo(() => opts.panels_by_dataset?.[form.dataset] || [], [opts, form.dataset]);
+
+  const selectableItems = useMemo(() => {
+    const query = testSearch.trim().toLowerCase();
+    const panels = panelOptions.map((panel) => ({
+      key: `panel::${panel.id}`,
+      name: panel.name,
+      kind: "panel",
+      tests: panel.tests || [],
+    }));
+    const tests = testOptions.map((test) => ({
+      key: `test::${test}`,
+      name: test,
+      kind: "test",
+    }));
+
+    return [...panels, ...tests].filter((item) =>
+      !query || item.name.toLowerCase().includes(query)
+    );
+  }, [panelOptions, testOptions, testSearch]);
+
+  useEffect(() => {
+    if (!id) {
+      window.setTimeout(() => nameRef.current?.focus(), 0);
     }
-  };
+  }, [id]);
 
-  loadData();
-}, [id]);
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const optionsResponse = await api.get("/options");
+        setOpts({
+          test: [],
+          tests_by_dataset: {},
+          district: [],
+          sample_type: [],
+          sample_types_by_dataset: {},
+          panels_by_dataset: {},
+          ...optionsResponse.data,
+        });
+
+        if (id) {
+          const recordResponse = await api.get(`/records/${id}`);
+          const d = recordResponse.data;
+
+          setForm({
+            dataset: d.dataset || d.dataset_type || "routine",
+            lab_number: d.lab_number || "",
+            date: d.date || "",
+            name: d.name || "",
+            age: d.age ?? "",
+            district: d.district || "",
+            sample_type: d.sample_type || "",
+            selected_test: "",
+            tests: normalizeTests(d),
+            result_date: d.result_date || "",
+            remarks: d.remarks || "",
+          });
+        }
+      } catch (err) {
+        console.error(err);
+        toast.error("Failed to load data");
+      }
+    };
+
+    loadData();
+  }, [id]);
 
   const update = (k, v) => setForm((f) => ({ ...f, [k]: v }));
-  const updateResult = (i, k, v) => setForm((f) => {
-    const r = [...f.results]; r[i] = { ...r[i], [k]: v }; return { ...f, results: r };
-  });
-  const addResult = () =>
-  setForm((f) => ({
-    ...f,
-    results: [
-      ...f.results,
-      { name: "", value: "" }
-    ],
-  }));
-  const removeResult = (i) => setForm((f) => ({ ...f, results: f.results.filter((_, x) => x !== i) }));
+
+  const updateDataset = (dataset) => {
+    localStorage.setItem("mds_last_dataset", dataset);
+    setForm((f) => ({
+      ...f,
+      dataset,
+      selected_test: "",
+      tests: [],
+      lab_number: id ? f.lab_number : "",
+    }));
+  };
+
+  const addSelection = (value) => {
+    if (!value) return;
+
+    if (value.startsWith("panel::")) {
+      const panel = panelOptions.find((item) => item.id === value.slice(7));
+      if (!panel) return;
+
+      setForm((current) => {
+        const existing = new Set(current.tests.map((item) => item.test));
+        const additions = (panel.tests || [])
+          .filter((name) => !existing.has(name))
+          .map((name) => ({
+            test: name,
+            result1: "",
+            result2: "",
+            result_date: "",
+          }));
+
+        if (!additions.length) {
+          toast.error("All tests in this panel are already added");
+          return current;
+        }
+
+        toast.success(`${panel.name} added`);
+        return { ...current, tests: [...current.tests, ...additions] };
+      });
+      setTestSearch("");
+      return;
+    }
+
+    const testName = value.startsWith("test::") ? value.slice(6) : value;
+    if (form.tests.some((item) => item.test === testName)) {
+      toast.error(`${testName} has already been added`);
+      return;
+    }
+
+    setForm((current) => ({
+      ...current,
+      tests: [
+        ...current.tests,
+        { test: testName, result1: "", result2: "", result_date: "" },
+      ],
+    }));
+    setTestSearch("");
+  };
+
+  const updateTest = (i, k, v) => {
+    setForm((f) => {
+      const tests = [...f.tests];
+      const current = { ...tests[i], [k]: v };
+
+      if ((k === "result1" || k === "result2") && v && !current.result_date) {
+        current.result_date = new Date().toISOString().slice(0, 10);
+      }
+
+      tests[i] = current;
+      return { ...f, tests };
+    });
+  };
+
+  const removeTest = (i) => {
+    setForm((f) => ({ ...f, tests: f.tests.filter((_, x) => x !== i) }));
+  };
 
   const save = async (e) => {
     e.preventDefault();
-    if (!form.lab_number || !form.name || !form.district || !form.test || !form.sample_type) {
-      toast.error("Please fill required fields");
+
+    if (!form.dataset || !form.name || !form.district || !form.sample_type || form.tests.length === 0) {
+      toast.error("Please fill required fields and add at least one test");
       return;
     }
+
     setSaving(true);
     try {
+      const cleanedTests = form.tests.map((t) => ({
+        test: t.test,
+        result1: t.result1 || "",
+        result2: t.result2 || "",
+        result_date: t.result_date || form.result_date || null,
+      }));
+
       const payload = {
-        ...form,
+        dataset: form.dataset,
+        lab_number: form.lab_number || null,
+        date: form.date,
+        name: form.name,
         age: form.age === "" ? null : Number(form.age),
-        results: form.results.filter(
-  (r) => r.name !== ""
-),
+        district: form.district,
+        sample_type: form.sample_type,
+        tests: cleanedTests,
         result_date: form.result_date || null,
         remarks: form.remarks || null,
+
+        // Temporary backward-compatible fields. These can be removed after backend is refactored.
+        test: cleanedTests[0]?.test || "",
+        results: cleanedTests.map((t) => ({ name: t.result1, value: t.result2 })),
       };
+
       if (id) {
         await api.put(`/records/${id}`, payload);
         toast.success("Record updated");
+        scheduleDriveSync();
+        nav("/records");
       } else {
         await api.post("/records", payload);
         toast.success("Record saved");
-        setForm(empty());
+        const retainedDataset = form.dataset;
+        localStorage.setItem("mds_last_dataset", retainedDataset);
+        setForm(empty(retainedDataset));
+        scheduleDriveSync();
+        window.setTimeout(() => nameRef.current?.focus(), 0);
       }
-      scheduleDriveSync();
-      nav("/records");
     } catch (e) {
       toast.error(e?.response?.data?.detail || "Save failed");
     } finally {
@@ -114,7 +289,7 @@ export default function DataEntry() {
   };
 
   return (
-    <div className="max-w-4xl">
+    <div className="max-w-6xl">
       <div className="mb-6">
         <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
           {id ? "Edit" : "New"}
@@ -124,127 +299,205 @@ export default function DataEntry() {
         </h1>
       </div>
 
-      <Card className="p-6 border border-slate-200 rounded-md shadow-none bg-white">
+      <Card className="p-6 border border-slate-200 rounded-2xl shadow-sm bg-white/95">
         <form onSubmit={save} className="grid grid-cols-1 md:grid-cols-2 gap-5">
-          <Field label="Lab Number *">
-            <Input data-testid={RECORDS.labNumber} value={form.lab_number} onChange={(e) => update("lab_number", e.target.value)} />
+          <div className="md:col-span-2">
+            <Label className="text-xs font-semibold tracking-[0.05em] uppercase text-slate-500">
+              Dataset *
+            </Label>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {DATASETS.map((dataset) => (
+                <label
+                  key={dataset.key}
+                  className={`flex items-center gap-1.5 rounded-full border px-3 py-2 text-xs font-medium cursor-pointer whitespace-nowrap transition ${
+                    form.dataset === dataset.key
+                      ? "border-blue-300 bg-blue-50 text-blue-700"
+                      : "border-slate-200 bg-white text-slate-700"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="dataset"
+                    value={dataset.key}
+                    checked={form.dataset === dataset.key}
+                    onChange={() => updateDataset(dataset.key)}
+                  />
+                  <span>{dataset.label}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <Field label="Lab Number">
+            <Input
+              data-testid={RECORDS.labNumber}
+              value={form.lab_number || `${selectedDataset.prefix} - auto generated on save`}
+              readOnly
+              className="bg-slate-50 text-slate-500"
+            />
           </Field>
+
           <Field label="Date *">
             <Input data-testid={RECORDS.date} type="date" value={form.date} onChange={(e) => update("date", e.target.value)} />
           </Field>
+
           <Field label="Patient Name *">
-            <Input data-testid={RECORDS.name} value={form.name} onChange={(e) => update("name", e.target.value)} />
+            <Input ref={nameRef} autoFocus={!id} data-testid={RECORDS.name} value={form.name} onChange={(e) => update("name", e.target.value)} />
           </Field>
+
           <Field label="Age">
             <Input data-testid={RECORDS.age} type="number" min="0" value={form.age} onChange={(e) => update("age", e.target.value)} />
           </Field>
+
           <Field label="District *">
             <select
-    value={form.district}
-    onChange={(e) => update("district", e.target.value)}
-    className="w-full border rounded p-2"
->
-    <option value="">Select district</option>
-    {opts.district.map((d) => (
-        <option key={d} value={d}>
-            {d}
-        </option>
-    ))}
-</select>
+              value={form.district}
+              onChange={(e) => update("district", e.target.value)}
+              className="w-full border rounded p-2 bg-white"
+            >
+              <option value="">Select district</option>
+              {opts.district.map((d) => (
+                <option key={d} value={d}>{d}</option>
+              ))}
+            </select>
           </Field>
-          <Field label="Test *">
-            <select
-  value={form.test}
-  onChange={(e) => update("test", e.target.value)}
-  className="w-full border rounded p-2"
->
-  <option value="">Select test</option>
-  {opts.test.map((t) => (
-    <option key={t} value={t}>
-      {t}
-    </option>
-  ))}
-</select>
-          </Field>
+
           <Field label="Type of Sample *">
             <select
-  value={form.sample_type}
-  onChange={(e) => update("sample_type", e.target.value)}
-  className="w-full border rounded p-2"
->
-  <option value="">Select sample type</option>
-  {opts.sample_type.map((s) => (
-    <option key={s} value={s}>
-      {s}
-    </option>
-  ))}
-</select>
-          </Field>
-          <Field label="Result Date">
-            <Input data-testid={RECORDS.resultDate} type="date" value={form.result_date} onChange={(e) => update("result_date", e.target.value)} />
+              value={form.sample_type}
+              onChange={(e) => update("sample_type", e.target.value)}
+              className="w-full border rounded p-2 bg-white"
+            >
+              <option value="">Select sample type</option>
+              {sampleOptions.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
           </Field>
 
           <div className="md:col-span-2">
-           <Label className="text-xs font-semibold uppercase tracking-[0.05em] text-slate-500">
-  Results
-</Label>
+            <Label className="text-xs font-semibold uppercase tracking-[0.05em] text-slate-500">
+              Select Tests *
+            </Label>
+            <div className="mt-1.5 rounded-xl border border-slate-200 bg-slate-50/70 p-3 space-y-3">
+              <div className="relative">
+                <MagnifyingGlass
+                  size={17}
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                />
+                <Input
+                  value={testSearch}
+                  onChange={(event) => setTestSearch(event.target.value)}
+                  placeholder="Search and click a test or panel"
+                  className="pl-9 bg-white"
+                />
+              </div>
 
-<div className="mt-1.5 bg-slate-50 border border-slate-200 rounded-md p-3 space-y-2">
+              <div className="max-h-56 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                {selectableItems.length === 0 ? (
+                  <div className="sm:col-span-2 lg:col-span-3 text-sm text-slate-500 p-3 text-center">
+                    No matching tests or panels.
+                  </div>
+                ) : (
+                  selectableItems.map((item) => {
+                    const alreadyAdded =
+                      item.kind === "test" &&
+                      form.tests.some((test) => test.test === item.name);
 
-  <div className="grid grid-cols-12 gap-2 mb-2 px-1 text-xs font-semibold uppercase text-slate-500">
-    <div className="col-span-5">
-      Result
-    </div>
+                    return (
+                      <button
+                        type="button"
+                        key={item.key}
+                        onClick={() => addSelection(item.key)}
+                        disabled={alreadyAdded}
+                        className={`text-left rounded-lg border px-3 py-2.5 transition ${
+                          alreadyAdded
+                            ? "border-emerald-200 bg-emerald-50 text-emerald-700 cursor-default"
+                            : item.kind === "panel"
+                              ? "border-indigo-200 bg-indigo-50/70 hover:bg-indigo-100 text-indigo-900"
+                              : "border-slate-200 bg-white hover:border-teal-300 hover:bg-teal-50 text-slate-800"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          {alreadyAdded && <CheckCircle size={16} weight="fill" />}
+                          <span className="font-medium text-sm">{item.name}</span>
+                        </div>
+                        {item.kind === "panel" && (
+                          <div className="mt-1 text-[11px] text-indigo-600">
+                            {item.tests.length} tests
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })
+                )}
+              </div>
 
-    <div className="col-span-6">
-      Value / Remarks (Optional)
-    </div>
+              <div className="overflow-x-auto border border-slate-200 rounded-md bg-white">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 border-b border-slate-200">
+                    <tr className="text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                      <th className="px-3 py-2 w-[35%]">Test Name</th>
+                      <th className="px-3 py-2 w-[25%]">Result Field 1</th>
+                      <th className="px-3 py-2 w-[25%]">Result Field 2</th>
+                      <th className="px-3 py-2 w-[10%]">Result Date</th>
+                      <th className="px-3 py-2 text-right w-[5%]">Remove</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {form.tests.length === 0 && (
+                      <tr>
+                        <td colSpan={5} className="px-3 py-6 text-center text-slate-500">
+                          No tests selected. Click a test or panel above to add it.
+                        </td>
+                      </tr>
+                    )}
 
-    <div className="col-span-1"></div>
-  </div>
-
-  {form.results.map((r, i) => (
-                <div key={i} className="grid grid-cols-12 gap-2 items-center">
-                  <select
-  data-testid={RECORDS.resultName(i)}
-  className="col-span-5 bg-white border rounded p-2"
-  value={r.name}
-  onChange={(e) => updateResult(i, "name", e.target.value)}
->
-  <option value="">Select result</option>
-  <option value="Positive">Positive</option>
-  <option value="Negative">Negative</option>
-  <option value="Indeterminate">Indeterminate</option>
-</select>
-                  <Input
-  data-testid={RECORDS.resultValue(i)}
-  placeholder="Value / Remarks"
-  className="col-span-6 bg-white"
-  value={r.value}
-  onChange={(e) => updateResult(i, "value", e.target.value)}
-/>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    data-testid={RECORDS.removeResultRow(i)}
-                    onClick={() => removeResult(i)}
-                    disabled={form.results.length <= 1}
-                    className="col-span-1 text-slate-500 hover:text-red-600"
-                  >
-                    <Trash size={16} />
-                  </Button>
-                </div>
-              ))}
-              <Button
-                type="button"
-                variant="outline"
-                onClick={addResult}
-                data-testid={RECORDS.addResultRow}
-                className="rounded-md text-blue-600 border-blue-200 hover:bg-blue-50 hover:text-blue-700"
-              >
-                <Plus size={14} className="mr-1.5" /> Add another result
-              </Button>
+                    {form.tests.map((t, i) => (
+                      <tr key={`${t.test}-${i}`} className="border-b border-slate-100 last:border-b-0">
+                        <td className="px-3 py-2 font-medium text-slate-900">{t.test}</td>
+                        <td className="px-3 py-2">
+                          <select
+                            className="w-full bg-white border rounded p-2"
+                            value={t.result1}
+                            onChange={(e) => updateTest(i, "result1", e.target.value)}
+                          >
+                            <option value="">Select result</option>
+                            {RESULT_OPTIONS.map((r) => (
+                              <option key={r} value={r}>{r}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="px-3 py-2">
+                          <Input
+                            placeholder="Optional"
+                            value={t.result2}
+                            onChange={(e) => updateTest(i, "result2", e.target.value)}
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <Input
+                            type="date"
+                            value={t.result_date || form.result_date}
+                            onChange={(e) => updateTest(i, "result_date", e.target.value)}
+                          />
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => removeTest(i)}
+                            className="text-slate-500 hover:text-red-600"
+                          >
+                            <Trash size={16} />
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
 
@@ -284,23 +537,4 @@ const Field = ({ label, children }) => (
     <Label className="text-xs font-semibold tracking-[0.05em] uppercase text-slate-500">{label}</Label>
     <div className="mt-1.5">{children}</div>
   </div>
-);
-
-const SelectField = ({ value, onChange, options, placeholder, testId }) => (
-  <Select
-    key={`${placeholder}-${value}`}
-    value={value || ""}
-    onValueChange={onChange}
-  >
-    <SelectTrigger data-testid={testId} className="bg-white">
-      <SelectValue placeholder={placeholder} />
-    </SelectTrigger>
-    <SelectContent>
-      {options?.map((o) => (
-        <SelectItem key={o} value={o}>
-          {o}
-        </SelectItem>
-      ))}
-    </SelectContent>
-  </Select>
 );
