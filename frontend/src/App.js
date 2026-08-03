@@ -1,59 +1,35 @@
-import React from "react";
-import "@/App.css";
-import "@/mds-theme.css";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { AuthProvider } from "@/context/AuthContext";
-import ProtectedRoute from "@/components/ProtectedRoute";
-import Layout from "@/components/Layout";
-import Login from "@/pages/Login";
-import Dashboard from "@/pages/Dashboard";
-import DataEntry from "@/pages/DataEntry";
-import Records from "@/pages/Records";
-import Reports from "@/pages/Reports";
-import BulkImport from "@/pages/BulkImport";
-import BulkResult from "@/pages/BulkResult";
-import IndividualResult from "@/pages/IndividualResult";
-import Settings from "@/pages/Settings";
-import BackupRestore from "@/pages/BackupRestore";
+import asyncio
+import os
 
-function AppRouter() {
-  return (
-    <Routes>
-      <Route path="/" element={<Login />} />
+from dotenv import load_dotenv
 
-      <Route
-        element={
-          <ProtectedRoute>
-            <Layout />
-          </ProtectedRoute>
-        }
-      >
-        <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/entry" element={<DataEntry />} />
-        <Route path="/entry/:id" element={<DataEntry />} />
-        <Route path="/records" element={<Records />} />
-        <Route path="/reports" element={<Reports />} />
-        <Route path="/import" element={<BulkImport />} />
-        <Route path="/bulk-result" element={<BulkResult />} />
-        <Route path="/individual-result" element={<IndividualResult />} />
-        <Route path="/settings" element={<Settings />} />
-        <Route path="/backup" element={<BackupRestore />} />
-      </Route>
+from backup_service import connect_database, run_backup
 
-      <Route path="*" element={<Navigate to="/" replace />} />
-      
-    </Routes>
-  );
-}
 
-export default function App() {
-  return (
-    <div className="App">
-      <BrowserRouter>
-        <AuthProvider>
-          <AppRouter />
-        </AuthProvider>
-      </BrowserRouter>
-    </div>
-  );
-}
+async def main():
+    load_dotenv()
+
+    enabled = (
+        os.environ.get("ENABLE_GOOGLE_DRIVE_BACKUP", "false")
+        .strip()
+        .lower()
+        == "true"
+    )
+    if not enabled:
+        print("Automatic Google Drive backup is disabled.")
+        return
+
+    client, db = await connect_database()
+    try:
+        result = await run_backup(db, trigger="scheduled")
+        print(
+            "Backup completed:",
+            result.get("filename"),
+            result.get("drive_url"),
+        )
+    finally:
+        client.close()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
