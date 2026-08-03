@@ -27,7 +27,6 @@ const navItems = [
   { to: "/dashboard", icon: House, label: "Dashboard" },
   { to: "/entry", icon: PlusCircle, label: "New Record" },
   { to: "/records", icon: TableIcon, label: "All Records" },
-  { to: "/individual-result", icon: CheckSquare, label: "Individual Result Entry" },
   { to: "/bulk-result", icon: CheckSquare, label: "Bulk Result Entry" },
   { to: "/reports", icon: ChartLine, label: "Reports & Export" },
   { to: "/import", icon: UploadSimple, label: "Bulk Import" },
