@@ -83,9 +83,8 @@ class TestResultItem(BaseModel):
 
 class SampleItem(BaseModel):
     id: str = Field(default_factory=lambda: f"sample_{uuid.uuid4().hex[:12]}")
-    dataset: str = "routine"
+    dataset: Optional[str] = None
     lab_number: Optional[str] = None
-    epid_number: Optional[str] = None
     sample_type: str
     tests: List[TestResultItem] = Field(default_factory=list)
     remarks: Optional[str] = None
@@ -299,16 +298,23 @@ async def _samples_from_payload(
     raw_samples = data.get("samples") or []
     samples: List[Dict[str, Any]] = []
 
-    for raw in raw_samples:
-        sample = raw if isinstance(raw, dict) else raw.model_dump()
-        dataset_key = normalize_key(sample.get("dataset") or fallback_dataset)
-        dataset_doc = await get_dataset(dataset_key)
-        sample_type = str(sample.get("sample_type") or "").strip()
+for raw in raw_samples:
+    sample = raw if isinstance(raw, dict) else raw.model_dump()
+
+    sample_dataset = normalize_key(
+        sample.get("dataset")
+        or (dataset_doc or {}).get("key")
+        or data.get("dataset")
+        or "routine"
+    )
+    sample_dataset_doc = await get_dataset(sample_dataset)
+
+    sample_type = str(sample.get("sample_type") or "").strip()
         if not sample_type:
             raise HTTPException(status_code=400, detail="Sample type is required")
 
-        mapping = _dataset_sample_mapping(dataset_doc, sample_type)
-        configured_mappings = dataset_doc.get("sample_mappings") or []
+        mapping = _dataset_sample_mapping(sample_dataset_doc, sample_type)
+configured_mappings = sample_dataset_doc.get("sample_mappings") or []
         if configured_mappings and not mapping:
             raise HTTPException(
                 status_code=400,
@@ -334,15 +340,16 @@ async def _samples_from_payload(
                     detail=f"Tests not allowed for {sample_type}: " + ", ".join(invalid),
                 )
 
-        samples.append({
-            "id": str(sample.get("id") or f"sample_{uuid.uuid4().hex[:12]}"),
-            "dataset": dataset_doc["key"],
-            "lab_number": str(sample.get("lab_number") or "").strip() or None,
-            "epid_number": str(sample.get("epid_number") or "").strip() or None,
-            "sample_type": sample_type,
-            "tests": tests,
-            "remarks": sample.get("remarks"),
-        })
+        samples.append(
+    {
+        "id": str(sample.get("id") or f"sample_{uuid.uuid4().hex[:12]}"),
+        "dataset": sample_dataset_doc["key"],
+        "lab_number": str(sample.get("lab_number") or "").strip() or None,
+        "sample_type": sample_type,
+        "tests": tests,
+        "remarks": sample.get("remarks"),
+    }
+)
 
     if samples:
         return samples
@@ -548,6 +555,7 @@ async def seed_defaults():
     await db.records.create_index("tests.test")
     await db.records.create_index("samples.dataset")
     await db.records.create_index("samples.lab_number")
+    await db.records.create_index("samples.dataset")
     await db.records.create_index("samples.epid_number")
     await db.records.create_index("samples.tests.test")
     await db.records.create_index("samples.sample_type")
@@ -1029,7 +1037,9 @@ async def create_record(payload: LabRecordCreate, user=Depends(get_current_user)
 
     for sample in samples:
         if not sample.get("lab_number"):
-            sample["lab_number"] = await generate_lab_number(sample["dataset"])
+        sample["lab_number"] = await generate_lab_number(
+            sample.get("dataset") or dataset_doc["key"]
+        )
 
     lab_number = samples[0]["lab_number"]
     patient_id = await generate_patient_id()
@@ -1143,8 +1153,10 @@ async def update_record(rid: str, payload: LabRecordUpdate, user=Depends(get_cur
             previous = existing_by_id.get(str(sample.get("id")))
             if not sample.get("lab_number") and previous:
                 sample["lab_number"] = previous.get("lab_number")
-            if not sample.get("lab_number"):
-                sample["lab_number"] = await generate_lab_number(sample["dataset"])
+           if not sample.get("lab_number"):
+            sample["lab_number"] = await generate_lab_number(
+                sample.get("dataset") or dataset_doc["key"]
+            )
 
         update["samples"] = samples
         update["lab_number"] = samples[0]["lab_number"]
