@@ -7,274 +7,518 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { FloppyDisk } from "@phosphor-icons/react";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger,
-} from "@/components/ui/dialog";
-import { CheckCircle } from "@phosphor-icons/react";
-import { BULK, TABLE } from "@/constants/testIds";
+  localDateValue,
+  millisecondsUntilNextDay,
+} from "@/lib/localDate";
+
+const blank = (value) =>
+  value === null ||
+  value === undefined ||
+  String(value).trim() === "";
+
+const shortEpid = (value) => {
+  const parts = String(value || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  return parts.length >= 4
+    ? parts.slice(-4).join(" ")
+    : value || "—";
+};
 
 const displayDate = (value) => {
-  if (!value || value === "—") return value || "—";
+  if (!value) return "—";
   const parts = String(value).slice(0, 10).split("-");
-  return parts.length === 3 ? `${parts[2]}-${parts[1]}-${parts[0]}` : value;
+  return parts.length === 3
+    ? `${parts[2]}-${parts[1]}-${parts[0]}`
+    : value;
 };
 
-const isBlank = (value) =>
-  value === null || value === undefined || String(value).trim() === "";
-
-const isSelectedTestPending = (record, selectedTest) => {
-  const tests = Array.isArray(record.tests) ? record.tests : [];
-  const item = tests.find((entry) => entry.test === selectedTest);
-  return !!item && isBlank(item.result1) && isBlank(item.result2);
-};
+const rowsForSelectedTest = (records, selectedTest) =>
+  records.flatMap((record) =>
+    (record.samples || []).flatMap((sample, sampleIndex) =>
+      (sample.tests || [])
+        .map((test, testIndex) => ({
+          key: `${record.id}::${sample.id || sampleIndex}::${
+            test.id || testIndex
+          }`,
+          recordId: record.id,
+          sampleId: sample.id,
+          sampleIndex,
+          testIndex,
+          dataset: sample.dataset || record.dataset,
+          labNumber: sample.lab_number || "",
+          epidNumber: sample.epid_number || record.epid_number || "",
+          date: record.date || "",
+          name: record.name || "",
+          sampleType: sample.sample_type || "",
+          testName: test.test || "",
+          result1: test.result1 || "",
+          result2: test.result2 || "",
+          resultDate: test.result_date || "",
+          remarks: test.remarks || "",
+        }))
+        .filter((row) => row.testName === selectedTest)
+    )
+  );
 
 export default function BulkResult() {
-  const [opts, setOpts] = useState({ test: [], datasets: [], tests_by_dataset: {} });
+  const [opts, setOpts] = useState({
+    test: [],
+    datasets: [],
+    tests_by_dataset: {},
+  });
   const [dataset, setDataset] = useState("");
   const [test, setTest] = useState("");
-  const [items, setItems] = useState([]);
+  const [records, setRecords] = useState([]);
+  const [pendingKeys, setPendingKeys] = useState(new Set());
   const [selected, setSelected] = useState({});
-  const [result1, setResult1] = useState("");
-  const [result2, setResult2] = useState("");
-  const [resultDate, setResultDate] = useState(new Date().toISOString().slice(0, 10));
-  const [open, setOpen] = useState(false);
+  const [applyResult, setApplyResult] = useState("Negative");
+  const [applyDate, setApplyDate] = useState(localDateValue());
+  const [dirtyRecords, setDirtyRecords] = useState(new Set());
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    api.get("/options").then((r) => setOpts(r.data)).catch(() => {});
+    api.get("/options").then((response) => setOpts(response.data));
+  }, []);
+
+  useEffect(() => {
+    let timer;
+    const schedule = () => {
+      timer = window.setTimeout(() => {
+        setApplyDate(localDateValue());
+        schedule();
+      }, millisecondsUntilNextDay());
+    };
+    schedule();
+    return () => window.clearTimeout(timer);
   }, []);
 
   const datasets = opts.datasets || opts.dataset || [];
+  const availableTests = useMemo(
+    () =>
+      dataset && opts.tests_by_dataset?.[dataset]
+        ? opts.tests_by_dataset[dataset]
+        : opts.test || [],
+    [dataset, opts]
+  );
 
-  const availableTests = useMemo(() => {
-    if (dataset && opts.tests_by_dataset?.[dataset]) {
-      return opts.tests_by_dataset[dataset];
-    }
-    return opts.test || [];
-  }, [opts, dataset]);
-
-  useEffect(() => {
-    if (test && !availableTests.includes(test)) {
-      setTest("");
-      setItems([]);
-      setSelected({});
-    }
-  }, [dataset, availableTests, test]);
+  const rows = useMemo(
+    () =>
+      rowsForSelectedTest(records, test).filter((row) =>
+        pendingKeys.has(row.key)
+      ),
+    [records, test, pendingKeys]
+  );
 
   const load = async () => {
-    if (!test) return toast.error("Select a test first");
+    if (!test) {
+      toast.error("Select a test");
+      return;
+    }
 
     setLoading(true);
-    setSelected({});
-
     try {
-      const params = { test, pending: true, page: 1, page_size: 200 };
-      if (dataset) params.dataset = dataset;
-      const r = await api.get("/records", { params });
-      setItems(
-        (r.data.items || []).filter((record) =>
-          isSelectedTestPending(record, test)
-        )
+      const response = await api.get("/records", {
+        params: {
+          dataset: dataset || undefined,
+          test,
+          pending: true,
+          page: 1,
+          page_size: 1000,
+        },
+      });
+      const loaded = response.data?.items || [];
+      const loadedRows = rowsForSelectedTest(loaded, test).filter(
+        (row) => blank(row.result1) && blank(row.result2)
       );
-    } catch (e) {
-      toast.error("Failed to load pending samples");
+      setRecords(loaded);
+      setPendingKeys(new Set(loadedRows.map((row) => row.key)));
+      setSelected({});
+      setDirtyRecords(new Set());
+    } catch {
+      toast.error("Failed to load pending records");
     } finally {
       setLoading(false);
     }
   };
 
-  const selectedIds = Object.entries(selected).filter(([, v]) => v).map(([k]) => k);
-  const allChecked = items.length > 0 && selectedIds.length === items.length;
+  const quantitativeTests = new Set([
+    "Hepatitis B Virus quantitation",
+    "Hepatitis C Virus quantitation",
+    "Cytomegalovirus quantitation",
+  ]);
 
-  const toggleAll = () => {
-    if (allChecked) setSelected({});
-    else setSelected(Object.fromEntries(items.map((i) => [i.id, true])));
+  const normalizeAdditionalResult = (testName, value) => {
+    const text = String(value || "").trim();
+    if (!text) return "";
+
+    if (
+      quantitativeTests.has(testName) &&
+      !/\bIU\s*\/\s*ml\s*$/i.test(text)
+    ) {
+      return `${text} IU/ml`;
+    }
+
+    return text;
   };
 
-  const apply = async () => {
-    if (selectedIds.length === 0) return toast.error("Select at least one sample");
-    if (!result1 && !result2) return toast.error("Enter Result 1 or Result 2");
+  const updateRow = (row, field, value) => {
+    setRecords((current) =>
+      current.map((record) => {
+        if (record.id !== row.recordId) return record;
+        const next = structuredClone(record);
+        const target =
+          next.samples[row.sampleIndex].tests[row.testIndex];
+        target[field] = value;
+        if (
+          (field === "result1" || field === "result2") &&
+          value &&
+          !target.result_date
+        ) {
+          target.result_date = localDateValue();
+        }
+        return next;
+      })
+    );
+    setDirtyRecords((current) => new Set(current).add(row.recordId));
+  };
 
-    try {
-      await api.post("/records/bulk-result", {
-        ids: selectedIds,
-        test,
-        result1: result1 || null,
-        result2: result2 || null,
-        result_date: resultDate || null,
-      });
-
-      toast.success(`Applied result to ${selectedIds.length} samples`);
-      scheduleDriveSync();
-
-      setItems((current) =>
-        current.filter((item) => !selectedIds.includes(item.id))
-      );
-      setSelected({});
-      setOpen(false);
-      setResult1("");
-      setResult2("");
-
-      await load();
-    } catch (e) {
-      toast.error(e?.response?.data?.detail || "Apply failed");
+  const finalizeAdditionalResult = (row) => {
+    const normalized = normalizeAdditionalResult(
+      row.testName,
+      row.result2
+    );
+    if (normalized !== row.result2) {
+      updateRow(row, "result2", normalized);
     }
   };
 
+  const selectedRows = rows.filter((row) => selected[row.key]);
+
+  const applyToSelected = () => {
+    if (!selectedRows.length) {
+      toast.error("Select at least one pending record");
+      return;
+    }
+    selectedRows.forEach((row) => {
+      updateRow(row, "result1", applyResult);
+      updateRow(row, "result_date", applyDate);
+    });
+    toast.success(
+      `Result filled in ${selectedRows.length} row${
+        selectedRows.length === 1 ? "" : "s"
+      }. Review and click Save Records.`
+    );
+  };
+
+  const saveRecords = async () => {
+    if (!dirtyRecords.size) {
+      toast.info("No changes to save");
+      return;
+    }
+    setSaving(true);
+    try {
+      const changed = records.filter((record) =>
+        dirtyRecords.has(record.id)
+      );
+      for (const record of changed) {
+        const firstSample = record.samples?.[0] || {};
+        const firstTests = firstSample.tests || [];
+        await api.put(`/records/${record.id}`, {
+          dataset: firstSample.dataset || record.dataset || "routine",
+          date: record.date,
+          name: record.name,
+          age: record.age ?? null,
+          sex: record.sex || null,
+          district: record.district,
+          requesting_institution:
+            record.requesting_institution || null,
+          epid_number: record.epid_number || null,
+          samples: record.samples,
+          remarks: record.remarks || null,
+          sample_type: firstSample.sample_type || "",
+          tests: firstTests,
+          test: firstTests[0]?.test || "",
+          result_date: firstTests[0]?.result_date || null,
+          results: firstTests.map((item) => ({
+            name: item.result1 || "",
+            value: item.result2 || "",
+          })),
+        });
+      }
+
+      const savedIds = new Set(changed.map((record) => record.id));
+      setPendingKeys((current) => {
+        const next = new Set(current);
+        rows.forEach((row) => {
+          if (!savedIds.has(row.recordId)) return;
+          const record = records.find(
+            (item) => item.id === row.recordId
+          );
+          const target =
+            record?.samples?.[row.sampleIndex]?.tests?.[row.testIndex];
+          if (
+            !blank(target?.result1) ||
+            !blank(target?.result2)
+          ) {
+            next.delete(row.key);
+          }
+        });
+        return next;
+      });
+      setSelected({});
+      setDirtyRecords(new Set());
+      scheduleDriveSync();
+      toast.success("Records saved");
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const allSelected =
+    rows.length > 0 && rows.every((row) => selected[row.key]);
+
   return (
     <div className="space-y-4">
-      <div>
-        <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-          Bulk result entry
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+            Bulk result entry
+          </div>
+          <h1 className="mt-1 font-heading text-3xl font-semibold">
+            Pending Sample Results
+          </h1>
         </div>
-        <h1 className="font-heading text-3xl font-semibold text-slate-900 mt-1">
-          Apply Same Result to Multiple Samples
-        </h1>
+
+        <Button
+          onClick={saveRecords}
+          disabled={saving || dirtyRecords.size === 0}
+          className="bg-blue-600 text-white"
+        >
+          <FloppyDisk size={16} className="mr-2" />
+          {saving
+            ? "Saving…"
+            : `Save Records${
+                dirtyRecords.size ? ` (${dirtyRecords.size})` : ""
+              }`}
+        </Button>
       </div>
 
-      <Card className="p-5 border border-slate-200 rounded-md shadow-none bg-white">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+      <Card className="border p-4 shadow-none">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-5">
           <Field label="Dataset">
             <select
               value={dataset}
-              onChange={(e) => {
-                setDataset(e.target.value);
-                setItems([]);
-                setSelected({});
+              onChange={(event) => {
+                setDataset(event.target.value);
+                setTest("");
+                setRecords([]);
               }}
-              className="w-full border rounded p-2 bg-white"
+              className="w-full rounded border bg-white p-2"
             >
-              <option value="">All datasets</option>
-              {datasets.map((d) => (
-                <option key={d.value || d.name || d} value={d.key || d.value || d.name || d}>
-                  {d.label || d.name || d}
+              <option value="">All Datasets</option>
+              {datasets.map((item) => (
+                <option key={item.key} value={item.key}>
+                  {item.name}
                 </option>
               ))}
             </select>
           </Field>
 
-          <Field label="Choose test">
+          <Field label="Test">
             <select
-              data-testid={BULK.testFilter}
               value={test}
-              onChange={(e) => setTest(e.target.value)}
-              className="w-full border rounded p-2 bg-white"
+              onChange={(event) => setTest(event.target.value)}
+              className="w-full rounded border bg-white p-2"
             >
               <option value="">Select test</option>
-              {availableTests.map((t) => (
-                <option key={t} value={t}>{t}</option>
+              {availableTests.map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
               ))}
             </select>
           </Field>
 
-          <Button type="button" variant="outline" onClick={load} disabled={loading}>
-            {loading ? "Loading…" : "Load pending"}
-          </Button>
+          <Field label="Apply Result">
+            <select
+              value={applyResult}
+              onChange={(event) =>
+                setApplyResult(event.target.value)
+              }
+              className="w-full rounded border bg-white p-2"
+            >
+              <option value="Positive">Positive</option>
+              <option value="Negative">Negative</option>
+              <option value="Indeterminate">Indeterminate</option>
+            </select>
+          </Field>
 
-          <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild>
-              <Button
-                data-testid={BULK.applyOpen}
-                disabled={selectedIds.length === 0}
-                className="bg-blue-600 hover:bg-blue-700 text-white"
-              >
-                <CheckCircle size={16} className="mr-2" />
-                Apply result to {selectedIds.length} selected
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Apply result to {selectedIds.length} samples</DialogTitle>
-              </DialogHeader>
+          <Field label="Result Date">
+            <Input
+              type="date"
+              value={applyDate}
+              onChange={(event) => setApplyDate(event.target.value)}
+            />
+          </Field>
 
-              <div className="space-y-4">
-                <Field label="Result date">
-                  <Input
-                    data-testid={BULK.resultDate}
-                    type="date"
-                    value={resultDate}
-                    onChange={(e) => setResultDate(e.target.value)}
-                  />
-                </Field>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <Field label="Result Field 1">
-                    <select
-                      data-testid={BULK.result1}
-                      value={result1}
-                      onChange={(e) => setResult1(e.target.value)}
-                      className="w-full border rounded p-2 bg-white"
-                    >
-                      <option value="">Select result</option>
-                      <option value="Positive">Positive</option>
-                      <option value="Negative">Negative</option>
-                      <option value="Indeterminate">Indeterminate</option>
-                    </select>
-                  </Field>
-                  <Field label="Result Field 2">
-                    <Input
-                      data-testid={BULK.result2}
-                      placeholder="Optional"
-                      value={result2}
-                      onChange={(e) => setResult2(e.target.value)}
-                    />
-                  </Field>
-                </div>
-              </div>
-
-              <DialogFooter>
-                <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
-                <Button data-testid={BULK.applyConfirm} onClick={apply} className="bg-blue-600 hover:bg-blue-700 text-white">
-                  Apply
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+          <div className="flex items-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={load}
+              disabled={loading}
+              className="flex-1"
+            >
+              {loading ? "Loading…" : "Load Pending"}
+            </Button>
+            <Button
+              type="button"
+              onClick={applyToSelected}
+              disabled={!selectedRows.length}
+              className="flex-1"
+            >
+              Apply to Selected
+            </Button>
+          </div>
         </div>
       </Card>
 
-      <Card className="border border-slate-200 rounded-md shadow-none bg-white overflow-hidden">
+      <Card className="overflow-hidden border shadow-none">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-white border-b border-slate-200">
-              <tr className="text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                <th className="px-3 py-2 w-10">
-                  <Checkbox checked={allChecked} onCheckedChange={toggleAll} data-testid={TABLE.selectAll} />
+          <table className="w-full min-w-[1500px] text-sm">
+            <thead>
+              <tr className="text-left text-[11px] uppercase text-slate-500">
+                <th className="px-3 py-2">
+                  <Checkbox
+                    checked={allSelected}
+                    onCheckedChange={(checked) =>
+                      setSelected(
+                        checked
+                          ? Object.fromEntries(
+                              rows.map((row) => [row.key, true])
+                            )
+                          : {}
+                      )
+                    }
+                  />
                 </th>
-                <th className="px-3 py-2">Lab #</th>
-                <th className="px-3 py-2">Date</th>
-                <th className="px-3 py-2">Name</th>
-                <th className="px-3 py-2">District</th>
-                <th className="px-3 py-2">Sample</th>
-                <th className="px-3 py-2">Test</th>
+                {[
+                  "Lab #",
+                  "EPID #",
+                  "Date",
+                  "Patient",
+                  "Sample",
+                  "Test",
+                  "Result",
+                  "Additional Result",
+                  "Result Date",
+                  "Test Remarks",
+                ].map((heading) => (
+                  <th key={heading} className="px-3 py-2">
+                    {heading}
+                  </th>
+                ))}
               </tr>
             </thead>
-            <tbody className="text-slate-700">
-              {loading && (
-                <tr><td colSpan={7} className="px-3 py-6 text-center text-slate-500">Loading…</td></tr>
-              )}
-              {!loading && items.length === 0 && (
+            <tbody>
+              {!rows.length && (
                 <tr>
-                  <td colSpan={7} className="px-3 py-10 text-center text-slate-500">
-                    {test ? "No pending samples for this test." : "Select a test to load pending samples."}
+                  <td
+                    colSpan={11}
+                    className="p-10 text-center text-slate-500"
+                  >
+                    Select a test and load pending records.
                   </td>
                 </tr>
               )}
-              {items.map((r) => (
-                <tr key={r.id} className="border-b border-slate-100 hover:bg-blue-50/40">
+
+              {rows.map((row) => (
+                <tr
+                  key={row.key}
+                  className={`border-t ${
+                    dirtyRecords.has(row.recordId)
+                      ? "bg-amber-50/50"
+                      : ""
+                  }`}
+                >
                   <td className="px-3 py-2">
                     <Checkbox
-                      checked={!!selected[r.id]}
-                      onCheckedChange={(v) => setSelected((s) => ({ ...s, [r.id]: !!v }))}
-                      data-testid={TABLE.select(r.id)}
+                      checked={Boolean(selected[row.key])}
+                      onCheckedChange={(checked) =>
+                        setSelected((current) => ({
+                          ...current,
+                          [row.key]: Boolean(checked),
+                        }))
+                      }
                     />
                   </td>
-                  <td className="px-3 py-2 font-mono text-xs text-slate-900">{r.lab_number}</td>
-                  <td className="px-3 py-2 tabular-nums">{displayDate(r.date)}</td>
-                  <td className="px-3 py-2 font-medium text-slate-900">{r.name}</td>
-                  <td className="px-3 py-2">{r.district}</td>
-                  <td className="px-3 py-2">{r.sample_type}</td>
-                  <td className="px-3 py-2">{test}</td>
+                  <td className="px-3 py-2 font-mono text-xs">
+                    {row.labNumber}
+                  </td>
+                  <td className="px-3 py-2 font-mono text-xs">
+                    {shortEpid(row.epidNumber)}
+                  </td>
+                  <td className="px-3 py-2">
+                    {displayDate(row.date)}
+                  </td>
+                  <td className="px-3 py-2 font-medium">
+                    {row.name}
+                  </td>
+                  <td className="px-3 py-2">{row.sampleType}</td>
+                  <td className="px-3 py-2">{row.testName}</td>
+                  <td className="min-w-44 px-3 py-2">
+                    <ResultEditor
+                      value={row.result1}
+                      onChange={(value) =>
+                        updateRow(row, "result1", value)
+                      }
+                    />
+                  </td>
+                  <td className="min-w-44 px-3 py-2">
+                    <Input
+                      value={row.result2}
+                      onChange={(event) =>
+                        updateRow(
+                          row,
+                          "result2",
+                          event.target.value
+                        )
+                      }
+                      onBlur={() => finalizeAdditionalResult(row)}
+                    />
+                  </td>
+                  <td className="min-w-40 px-3 py-2">
+                    <Input
+                      type="date"
+                      value={row.resultDate}
+                      onChange={(event) =>
+                        updateRow(
+                          row,
+                          "result_date",
+                          event.target.value
+                        )
+                      }
+                    />
+                  </td>
+                  <td className="min-w-56 px-3 py-2">
+                    <Input
+                      value={row.remarks}
+                      onChange={(event) =>
+                        updateRow(
+                          row,
+                          "remarks",
+                          event.target.value
+                        )
+                      }
+                    />
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -287,7 +531,36 @@ export default function BulkResult() {
 
 const Field = ({ label, children }) => (
   <div>
-    <Label className="text-xs font-semibold tracking-[0.05em] uppercase text-slate-500">{label}</Label>
+    <Label className="text-xs font-semibold uppercase text-slate-500">
+      {label}
+    </Label>
     <div className="mt-1.5">{children}</div>
   </div>
 );
+
+const ResultEditor = ({ value, onChange }) => {
+  const standard = ["", "Positive", "Negative", "Indeterminate"];
+  const custom = value && !standard.includes(value);
+
+  if (custom) {
+    return (
+      <Input
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    );
+  }
+
+  return (
+    <select
+      value={value || ""}
+      onChange={(event) => onChange(event.target.value)}
+      className="w-full rounded border bg-white p-2"
+    >
+      <option value="">Pending</option>
+      <option value="Positive">Positive</option>
+      <option value="Negative">Negative</option>
+      <option value="Indeterminate">Indeterminate</option>
+    </select>
+  );
+};

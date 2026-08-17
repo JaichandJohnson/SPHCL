@@ -10,8 +10,10 @@ import Dashboard from "@/pages/Dashboard";
 import DataEntry from "@/pages/DataEntry";
 import Records from "@/pages/Records";
 import Reports from "@/pages/Reports";
+import ReportPrint from "@/pages/ReportPrint";
 import BulkImport from "@/pages/BulkImport";
 import BulkResult from "@/pages/BulkResult";
+import IndividualResult from "@/pages/IndividualResult";
 import Settings from "@/pages/Settings";
 import BackupRestore from "@/pages/BackupRestore";
 
@@ -32,7 +34,9 @@ function AppRouter() {
         <Route path="/entry/:id" element={<DataEntry />} />
         <Route path="/records" element={<Records />} />
         <Route path="/reports" element={<Reports />} />
+        <Route path="/reports/print" element={<ReportPrint />} />
         <Route path="/import" element={<BulkImport />} />
+        <Route path="/individual-result" element={<IndividualResult />} />
         <Route path="/bulk-result" element={<BulkResult />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/backup" element={<BackupRestore />} />

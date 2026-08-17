@@ -19,6 +19,7 @@ from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
+import re
 
 SCOPES = [
     "openid",
@@ -50,7 +51,10 @@ def client_config():
 
 
 def cipher():
-    key = os.environ.get("BACKUP_TOKEN_ENCRYPTION_KEY", "")
+    key = (
+        os.environ.get("BACKUP_ENCRYPTION_KEY", "").strip()
+        or os.environ.get("BACKUP_TOKEN_ENCRYPTION_KEY", "").strip()
+    )
     try:
         return Fernet(key.encode())
     except Exception as exc:

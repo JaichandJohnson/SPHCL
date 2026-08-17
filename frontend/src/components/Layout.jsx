@@ -73,14 +73,14 @@ export default function Layout() {
   const lastSync = getLastSync();
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-slate-200 bg-white/95 shadow-sm backdrop-blur lg:flex">
+    <div className="h-screen overflow-hidden bg-slate-50 text-slate-900">
+      <aside className="app-sidebar fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-slate-200 bg-white/95 shadow-sm backdrop-blur lg:flex">
         <div className="border-b border-slate-100 bg-gradient-to-br from-slate-950 via-slate-900 to-teal-900 px-5 py-6 text-white">
           <div className="flex items-center gap-3">
             <img
               src={sidebarLogo}
               alt="Molecular Diagnosis Section logo"
-              className="h-20 w-20 rounded-full border border-white/90 bg-white object-contain p-[2px] shadow-lg"
+              className="h-20 w-20 rounded-full border border-white/90 bg-white object-cover p-[2px] shadow-lg"
             />
             <div>
               <div className="text-base font-semibold leading-tight">MDS LIMS</div>
@@ -131,23 +131,23 @@ export default function Layout() {
         </div>
       </aside>
 
-      <div className="lg:pl-64">
-        <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/90 px-4 py-3 shadow-sm backdrop-blur md:px-7">
+      <div className="app-content-shell flex h-screen flex-col overflow-hidden lg:pl-64">
+        <header className="app-header z-20 shrink-0 border-b border-slate-200 bg-white/95 px-4 py-1.5 shadow-sm backdrop-blur md:px-6">
           <div className="mx-auto flex max-w-[1900px] items-center justify-between gap-4">
             <div className="flex min-w-0 items-center gap-3">
               <img
                 src={logo}
                 alt=""
-                className="h-14 w-14 shrink-0 rounded-full border border-white bg-white object-cover p-[1px] shadow-md scale-[1.24] lg:hidden"
+                className="h-11 w-11 shrink-0 rounded-full border border-white bg-white object-cover p-px shadow-sm lg:hidden"
               />
               <div className="min-w-0">
-                <div className="truncate text-[10px] font-semibold uppercase tracking-[0.2em] text-teal-700">
+                <div className="truncate text-[9px] font-semibold uppercase tracking-[0.16em] text-teal-700">
                   MDS Laboratory Information Management System
                 </div>
-                <div className="truncate text-lg font-semibold text-slate-900">
+                <div className="truncate text-base font-semibold leading-tight text-slate-900">
                   State Public Health &amp; Clinical Laboratory, Trivandrum
                 </div>
-                <div className="truncate text-xs text-slate-500">
+                <div className="truncate text-[11px] text-slate-500">
                   Molecular Diagnosis Section
                 </div>
               </div>
@@ -183,11 +183,11 @@ export default function Layout() {
           </div>
         </header>
 
-        <main className="mx-auto w-full max-w-[1900px] p-3 md:p-5 xl:px-6">
+        <main className="app-main mx-auto min-h-0 w-full max-w-[1900px] flex-1 overflow-y-auto overscroll-contain p-2 md:p-3 xl:px-4">
           <Outlet />
         </main>
 
-        <footer className="border-t border-slate-200 bg-white/70 px-5 py-4 text-center text-xs text-slate-500">
+        <footer className="app-footer shrink-0 border-t border-slate-200 bg-white/90 px-5 py-1 text-center text-[10px] text-slate-500">
           © 2026 State Public Health &amp; Clinical Laboratory, Trivandrum.
         </footer>
       </div>

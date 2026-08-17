@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { localDateValue, millisecondsUntilNextDay } from "@/lib/localDate";
 import {
   CaretDown,
   CaretUp,
@@ -137,7 +138,7 @@ export default function IndividualResult() {
   const [panelSampleKey, setPanelSampleKey] = useState("");
   const [panelId, setPanelId] = useState("");
   const [panelResultDate, setPanelResultDate] = useState(
-    new Date().toISOString().slice(0, 10)
+    localDateValue()
   );
   const [panelRemarks, setPanelRemarks] = useState("");
   const [pendingKeys, setPendingKeys] = useState(new Set());
@@ -150,6 +151,18 @@ export default function IndividualResult() {
   const [saving, setSaving] = useState(false);
   const [pageSize, setPageSize] = useState(50);
   const [page, setPage] = useState(1);
+
+  useEffect(() => {
+    let timer;
+    const schedule = () => {
+      timer = window.setTimeout(() => {
+        setPanelResultDate(localDateValue());
+        schedule();
+      }, millisecondsUntilNextDay());
+    };
+    schedule();
+    return () => window.clearTimeout(timer);
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -263,25 +276,56 @@ export default function IndividualResult() {
     const seen = new Set();
     const options = [];
 
-    rows.forEach((row) => {
-      const key = `${row.recordId}::${row.sampleId || row.sampleIndex}`;
-      if (seen.has(key)) return;
-      seen.add(key);
+    records.forEach((record) => {
+      (record.samples || []).forEach((sample, sampleIndex) => {
+        const sampleDataset =
+          sample.dataset || record.dataset || "routine";
 
-      options.push({
-        key,
-        recordId: row.recordId,
-        sampleId: row.sampleId,
-        sampleIndex: row.sampleIndex,
-        dataset: row.dataset,
-        labNumber: row.labNumber,
-        name: row.name,
-        sampleType: row.sampleType,
+        if (dataset && sampleDataset !== dataset) return;
+        if (!(sample.assigned_panels || []).length) return;
+
+        const hasPendingPanelTest = (
+          sample.assigned_panels || []
+        ).some((assignment) =>
+          (sample.tests || []).some((test, testIndex) => {
+            const rowKey = `${record.id}::${
+              sample.id || sampleIndex
+            }::${test.id || testIndex}`;
+            return (
+              (assignment.tests || []).includes(test.test) &&
+              pendingKeys.has(rowKey)
+            );
+          })
+        );
+
+        if (!hasPendingPanelTest) return;
+
+        const key = `${record.id}::${sample.id || sampleIndex}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+
+        options.push({
+          key,
+          recordId: record.id,
+          sampleId: sample.id,
+          sampleIndex,
+          dataset: sampleDataset,
+          labNumber: sample.lab_number || "",
+          name: record.name || "",
+          sampleType: sample.sample_type || "",
+          assignedPanels: sample.assigned_panels || [],
+        });
       });
     });
 
-    return options;
-  }, [rows]);
+    return options.sort((a, b) =>
+      `${a.name} ${a.labNumber}`.localeCompare(
+        `${b.name} ${b.labNumber}`,
+        undefined,
+        { numeric: true, sensitivity: "base" }
+      )
+    );
+  }, [records, dataset]);
 
   const selectedPanelSample = panelSampleOptions.find(
     (item) => item.key === panelSampleKey
@@ -290,20 +334,47 @@ export default function IndividualResult() {
   const availablePanels = useMemo(() => {
     if (!selectedPanelSample) return [];
 
-    const sampleRows = rows.filter(
-      (row) =>
-        row.recordId === selectedPanelSample.recordId &&
-        row.sampleIndex === selectedPanelSample.sampleIndex
+    const record = records.find(
+      (item) => item.id === selectedPanelSample.recordId
     );
-    const pendingTests = new Set(
-      sampleRows.map((row) => row.testName)
+    const sample =
+      record?.samples?.[selectedPanelSample.sampleIndex];
+
+    if (!sample) return [];
+
+    const unique = new Map();
+
+    (selectedPanelSample.assignedPanels || []).forEach(
+      (assignment) => {
+        const hasPending = (sample.tests || []).some((test, testIndex) => {
+          const rowKey = `${record.id}::${
+            sample.id || selectedPanelSample.sampleIndex
+          }::${test.id || testIndex}`;
+          return (
+            (assignment.tests || []).includes(test.test) &&
+            pendingKeys.has(rowKey)
+          );
+        });
+
+        if (!hasPending) return;
+        if (!assignment.panel_id || unique.has(assignment.panel_id)) {
+          return;
+        }
+
+        unique.set(assignment.panel_id, {
+          id: assignment.panel_id,
+          name: assignment.panel_name,
+          tests: assignment.tests || [],
+        });
+      }
     );
 
-    return (panelsByDataset[selectedPanelSample.dataset] || [])
-      .filter((panel) =>
-        (panel.tests || []).some((test) => pendingTests.has(test))
-      );
-  }, [selectedPanelSample, rows, panelsByDataset]);
+    return [...unique.values()].sort((a, b) =>
+      String(a.name).localeCompare(String(b.name), undefined, {
+        sensitivity: "base",
+      })
+    );
+  }, [selectedPanelSample, records]);
 
   useEffect(() => {
     if (
@@ -379,7 +450,7 @@ export default function IndividualResult() {
           test.result1 = "Negative";
           test.result_date =
             panelResultDate ||
-            new Date().toISOString().slice(0, 10);
+            localDateValue();
 
           if (panelRemarks.trim()) {
             test.remarks = panelRemarks.trim();
@@ -458,6 +529,26 @@ export default function IndividualResult() {
     }));
   };
 
+  const quantitativeTests = new Set([
+    "Hepatitis B Virus quantitation",
+    "Hepatitis C Virus quantitation",
+    "Cytomegalovirus quantitation",
+  ]);
+
+  const normalizeAdditionalResult = (testName, value) => {
+    const text = String(value || "").trim();
+    if (!text) return "";
+
+    if (
+      quantitativeTests.has(testName) &&
+      !/\bIU\s*\/\s*ml\s*$/i.test(text)
+    ) {
+      return `${text} IU/ml`;
+    }
+
+    return text;
+  };
+
   const updateRow = (row, field, value) => {
     setRecords((current) =>
       current.map((record) => {
@@ -473,7 +564,7 @@ export default function IndividualResult() {
           value &&
           !test.result_date
         ) {
-          test.result_date = new Date().toISOString().slice(0, 10);
+          test.result_date = localDateValue();
         }
 
         return next;
@@ -485,6 +576,17 @@ export default function IndividualResult() {
       next.add(row.recordId);
       return next;
     });
+  };
+
+  const finalizeAdditionalResult = (row) => {
+    const normalized = normalizeAdditionalResult(
+      row.testName,
+      row.result2
+    );
+
+    if (normalized !== row.result2) {
+      updateRow(row, "result2", normalized);
+    }
   };
 
   const saveChanges = async () => {
@@ -700,6 +802,9 @@ export default function IndividualResult() {
             {selectedPanelSample.name} · {selectedPanelSample.labNumber} ·{" "}
             {selectedPanelSample.sampleType}
             {selectedPanel ? ` · Panel: ${selectedPanel.name}` : ""}
+            {selectedPanel
+              ? ` · ${selectedPanel.tests?.length || 0} tests`
+              : ""}
           </div>
         )}
 
@@ -717,7 +822,11 @@ export default function IndividualResult() {
               <option value="">Select sample</option>
               {panelSampleOptions.map((item) => (
                 <option key={item.key} value={item.key}>
-                  {item.labNumber} · {item.name} · {item.sampleType}
+                  {item.labNumber} · {item.name} · {item.sampleType} ·{" "}
+                  {datasets.find(
+                    (datasetItem) =>
+                      datasetItem.key === item.dataset
+                  )?.label || item.dataset}
                 </option>
               ))}
             </select>
@@ -858,17 +967,11 @@ export default function IndividualResult() {
                     <td className="px-3 py-2">{row.sampleType}</td>
                     <td className="px-3 py-2 font-medium">{row.testName}</td>
                     <td className="min-w-48 px-3 py-2">
-                      <Input
-                        list="individual-result-options"
+                      <ResultEditor
                         value={row.result1}
-                        onChange={(event) =>
-                          updateRow(
-                            row,
-                            "result1",
-                            event.target.value
-                          )
+                        onChange={(value) =>
+                          updateRow(row, "result1", value)
                         }
-                        placeholder="Select or type"
                       />
                     </td>
                     <td className="min-w-40 px-3 py-2">
@@ -893,6 +996,9 @@ export default function IndividualResult() {
                             "result2",
                             event.target.value
                           )
+                        }
+                        onBlur={() =>
+                          finalizeAdditionalResult(row)
                         }
                         placeholder="Optional"
                       />
@@ -961,12 +1067,6 @@ export default function IndividualResult() {
           </div>
         </div>
       </Card>
-
-      <datalist id="individual-result-options">
-        {RESULT_OPTIONS.map((result) => (
-          <option key={result} value={result} />
-        ))}
-      </datalist>
     </div>
   );
 }
@@ -980,3 +1080,58 @@ const Field = ({ label, children }) => (
     <div className="mt-1.5">{children}</div>
   </div>
 );
+
+
+const ResultEditor = ({ value, onChange }) => {
+  const standard = ["", "Positive", "Negative", "Indeterminate"];
+  const isCustom = value && !standard.includes(value);
+  const [custom, setCustom] = React.useState(isCustom);
+
+  React.useEffect(() => {
+    setCustom(Boolean(value && !standard.includes(value)));
+  }, [value]);
+
+  if (custom) {
+    return (
+      <div className="flex gap-1">
+        <Input
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder="Enter result"
+        />
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            setCustom(false);
+            onChange("");
+          }}
+        >
+          List
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <select
+      value={standard.includes(value) ? value : ""}
+      onChange={(event) => {
+        if (event.target.value === "__custom__") {
+          setCustom(true);
+          onChange("");
+        } else {
+          onChange(event.target.value);
+        }
+      }}
+      className="w-full rounded border bg-white p-2"
+    >
+      <option value="">Pending</option>
+      <option value="Positive">Positive</option>
+      <option value="Negative">Negative</option>
+      <option value="Indeterminate">Indeterminate</option>
+      <option value="__custom__">Other / custom</option>
+    </select>
+  );
+};

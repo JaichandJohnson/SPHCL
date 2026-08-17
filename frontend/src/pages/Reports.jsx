@@ -39,6 +39,7 @@ const emptyFilters = {
   result_contains: "",
   date_from: "",
   date_to: "",
+  nvhcp_program: ANY,
 };
 
 const allSampleTests = (record) => {
@@ -51,7 +52,21 @@ const allSampleTests = (record) => {
         epid_number: sample.epid_number || record.epid_number,
         sample_type: sample.sample_type || record.sample_type,
         sample_remarks: sample.remarks || "",
+        nvhcp_program: Boolean(sample.nvhcp_program),
         test: test.test || "—",
+        result1: test.result1 || "",
+        result2: test.result2 || "",
+        test_remarks: test.remarks || "",
+        panel_ids: (sample.assigned_panels || [])
+          .filter((panel) =>
+            (panel.tests || []).includes(test.test)
+          )
+          .map((panel) => panel.panel_id),
+        panel_names: (sample.assigned_panels || [])
+          .filter((panel) =>
+            (panel.tests || []).includes(test.test)
+          )
+          .map((panel) => panel.panel_name),
         result:
           [test.result1, test.result2].filter(Boolean).join(" / ") ||
           "Pending",
@@ -73,6 +88,11 @@ const allSampleTests = (record) => {
       sample_type: record.sample_type,
       sample_remarks: "",
       test: test.test || "—",
+      result1: test.result1 || "",
+      result2: test.result2 || "",
+      test_remarks: test.remarks || "",
+      panel_ids: [],
+      panel_names: [],
       result:
         [test.result1, test.result2].filter(Boolean).join(" / ") ||
         "Pending",
@@ -87,7 +107,9 @@ const allSampleTests = (record) => {
 
 export default function Reports() {
   const navigate = useNavigate();
-  const [tab, setTab] = useState("individual");
+  const [tab, setTab] = useState(
+    () => localStorage.getItem("mds_reports_tab") || "individual"
+  );
   const [opts, setOpts] = useState({
     datasets: [],
     test: [],
@@ -104,6 +126,8 @@ export default function Reports() {
   const [individualSearch, setIndividualSearch] = useState("");
   const [individualItems, setIndividualItems] = useState([]);
   const [individualDataset, setIndividualDataset] = useState("");
+  const [individualDateFrom, setIndividualDateFrom] = useState("");
+  const [individualDateTo, setIndividualDateTo] = useState("");
   const [individualSort, setIndividualSort] = useState({
     column: "date",
     direction: "desc",
@@ -112,14 +136,34 @@ export default function Reports() {
   const [individualPageSize, setIndividualPageSize] = useState(50);
   const [consolidatedTemplate, setConsolidatedTemplate] =
     useState("generic");
-  const [consolidatedTest, setConsolidatedTest] = useState("");
+  const [consolidatedTests, setConsolidatedTests] = useState([]);
   const [consolidatedPanel, setConsolidatedPanel] = useState("");
   const [consolidatedSpecimen, setConsolidatedSpecimen] = useState("");
+  const [individualReportRemarks, setIndividualReportRemarks] =
+    useState("");
+  const [consolidatedReportRemarks, setConsolidatedReportRemarks] =
+    useState("");
+  const [selectedConsolidatedRows, setSelectedConsolidatedRows] =
+    useState({});
+  const [consolidatedSort, setConsolidatedSort] = useState({
+    column: "name",
+    direction: "asc",
+  });
+  const [tatThresholds, setTatThresholds] = useState([]);
 
   useEffect(() => {
-    api
-      .get("/options")
-      .then((response) => setOpts(response.data))
+    localStorage.setItem("mds_reports_tab", tab);
+  }, [tab]);
+
+  useEffect(() => {
+    Promise.all([
+      api.get("/options"),
+      api.get("/tat-thresholds"),
+    ])
+      .then(([optionsResponse, thresholdResponse]) => {
+        setOpts(optionsResponse.data);
+        setTatThresholds(thresholdResponse.data || []);
+      })
       .catch(() => {});
   }, []);
 
@@ -133,7 +177,12 @@ export default function Reports() {
   const params = () => {
     const values = {};
     Object.entries(filters).forEach(([key, value]) => {
-      if (value && value !== ANY) values[key] = value;
+      if (!value || value === ANY) return;
+      if (key === "nvhcp_program") {
+        values[key] = value === "true";
+        return;
+      }
+      values[key] = value;
     });
     return values;
   };
@@ -146,6 +195,8 @@ export default function Reports() {
         const response = await api.get("/records", {
           params: {
             search: individualSearch.trim() || undefined,
+            date_from: individualDateFrom || undefined,
+            date_to: individualDateTo || undefined,
             page: 1,
             page_size: 200,
           },
@@ -156,17 +207,11 @@ export default function Reports() {
         );
         setIndividualItems(completed);
       } else if (tab === "district") {
-        if (filters.district === ANY) {
-          setItems([]);
-          setTotal(0);
-          return;
-        }
-
         const response = await api.get("/records", {
           params: {
             ...params(),
             page: 1,
-            page_size: 1000,
+            page_size: 250,
           },
         });
         setItems(response.data.items || []);
@@ -176,7 +221,7 @@ export default function Reports() {
           params: {
             ...params(),
             page: 1,
-            page_size: 500,
+            page_size: 250,
           },
         });
         setItems(response.data.items || []);
@@ -226,6 +271,13 @@ export default function Reports() {
   };
 
   useEffect(() => {
+    // Consolidated and filtered reports can contain large record sets.
+    // They load only after the user clicks Apply, which prevents a large
+    // network request simply by opening the tab.
+    if (tab === "district" || tab === "filtered") {
+      setLoading(false);
+      return;
+    }
     run();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
@@ -276,19 +328,29 @@ export default function Reports() {
   };
 
   const openIndividualReport = (recordId) => {
-    navigate(`/reports/print?type=individual&id=${recordId}`);
+    const query = new URLSearchParams({
+      type: "individual",
+      id: recordId,
+    });
+
+    if (individualReportRemarks.trim()) {
+      query.set(
+        "report_remarks",
+        individualReportRemarks.trim()
+      );
+    }
+
+    navigate(`/reports/print?${query.toString()}`);
   };
 
   const openDistrictReport = () => {
-    if (filters.district === ANY) {
-      toast.error("Select a district");
-      return;
-    }
-
     const query = new URLSearchParams({
       type: "district",
-      district: filters.district,
     });
+
+    if (filters.district !== ANY) {
+      query.set("district", filters.district);
+    }
 
     if (filters.dataset !== ANY) {
       query.set("dataset", filters.dataset);
@@ -298,10 +360,26 @@ export default function Reports() {
     if (consolidatedTemplate) {
       query.set("template", consolidatedTemplate);
     }
-    if (consolidatedTest) query.set("test", consolidatedTest);
+    if (consolidatedTests.length) query.set("tests", consolidatedTests.join(","));
     if (consolidatedPanel) query.set("panel", consolidatedPanel);
     if (consolidatedSpecimen) {
       query.set("specimen", consolidatedSpecimen);
+    }
+
+    localStorage.setItem(
+      "mds_consolidated_report_payload",
+      JSON.stringify({
+        selectedRows: Object.keys(selectedConsolidatedRows).filter(
+          (key) => selectedConsolidatedRows[key]
+        ),
+      })
+    );
+
+    if (consolidatedReportRemarks.trim()) {
+      query.set(
+        "report_remarks",
+        consolidatedReportRemarks.trim()
+      );
     }
 
     window.open(
@@ -313,19 +391,20 @@ export default function Reports() {
 
   const tabs = [
     ["individual", "Individual Patient Report"],
-    ["district", "District Consolidated Report"],
+    ["district", "Consolidated Reports"],
     ["filtered", "Filtered Reports & Export"],
     ["statistics", "Test Statistics"],
     ["tat", "TAT Graph"],
+    ["tat_report", "TAT Report"],
   ];
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-2">
       <div>
         <div className="text-xs font-semibold uppercase text-slate-500">
           Reports
         </div>
-        <h1 className="font-heading text-3xl font-semibold">
+        <h1 className="font-heading text-2xl font-semibold leading-tight">
           Reports & Analysis
         </h1>
       </div>
@@ -352,6 +431,16 @@ export default function Reports() {
           records={individualItems}
           datasets={datasets}
           selectedDataset={individualDataset}
+          dateFrom={individualDateFrom}
+          setDateFrom={(value) => {
+            setIndividualDateFrom(value);
+            setIndividualPage(1);
+          }}
+          dateTo={individualDateTo}
+          setDateTo={(value) => {
+            setIndividualDateTo(value);
+            setIndividualPage(1);
+          }}
           setSelectedDataset={(value) => {
             setIndividualDataset(value);
             setIndividualPage(1);
@@ -366,6 +455,8 @@ export default function Reports() {
             setIndividualPage(1);
           }}
           openReport={openIndividualReport}
+          reportRemarks={individualReportRemarks}
+          setReportRemarks={setIndividualReportRemarks}
         />
       ) : (
         <>
@@ -382,8 +473,8 @@ export default function Reports() {
             openDistrictReport={openDistrictReport}
             consolidatedTemplate={consolidatedTemplate}
             setConsolidatedTemplate={setConsolidatedTemplate}
-            consolidatedTest={consolidatedTest}
-            setConsolidatedTest={setConsolidatedTest}
+            consolidatedTests={consolidatedTests}
+            setConsolidatedTests={setConsolidatedTests}
             consolidatedPanel={consolidatedPanel}
             setConsolidatedPanel={setConsolidatedPanel}
             consolidatedSpecimen={consolidatedSpecimen}
@@ -400,10 +491,16 @@ export default function Reports() {
               datasets={datasets}
               print={openDistrictReport}
               template={consolidatedTemplate}
-              selectedTest={consolidatedTest}
+              selectedTests={consolidatedTests}
               selectedPanel={consolidatedPanel}
               selectedSpecimen={consolidatedSpecimen}
               panels={opts.panels || []}
+              selectedRows={selectedConsolidatedRows}
+              setSelectedRows={setSelectedConsolidatedRows}
+              reportRemarks={consolidatedReportRemarks}
+              setReportRemarks={setConsolidatedReportRemarks}
+              consolidatedSort={consolidatedSort}
+              setConsolidatedSort={setConsolidatedSort}
             />
           ) : tab === "filtered" ? (
             <Filtered
@@ -414,6 +511,17 @@ export default function Reports() {
             />
           ) : tab === "statistics" ? (
             <Statistics items={stats} />
+          ) : tab === "tat_report" ? (
+            <TatReport
+              data={tat}
+              thresholds={tatThresholds}
+              selectedDataset={
+                filters.dataset !== ANY
+                  ? filters.dataset
+                  : ""
+              }
+              datasets={datasets}
+            />
           ) : (
             <Tat data={tat} />
           )}
@@ -432,6 +540,10 @@ function IndividualReportSearch({
   datasets,
   selectedDataset,
   setSelectedDataset,
+  dateFrom,
+  setDateFrom,
+  dateTo,
+  setDateTo,
   sort,
   setSort,
   page,
@@ -439,6 +551,8 @@ function IndividualReportSearch({
   pageSize,
   setPageSize,
   openReport,
+  reportRemarks,
+  setReportRemarks,
 }) {
   const datasetOrder = [
     "routine",
@@ -460,6 +574,12 @@ function IndividualReportSearch({
   });
 
   const rows = records
+    .filter((record) => {
+      const recordDate = String(record.date || "").slice(0, 10);
+      if (dateFrom && recordDate < dateFrom) return false;
+      if (dateTo && recordDate > dateTo) return false;
+      return true;
+    })
     .map((record) => {
       const completed = allSampleTests(record).filter(
         (row) =>
@@ -596,6 +716,28 @@ function IndividualReportSearch({
               placeholder="Search by patient name, lab number, patient ID or EPID number"
               className="pl-9"
             />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Field label="From">
+              <Input
+                type="date"
+                value={dateFrom}
+                onChange={(event) =>
+                  setDateFrom(event.target.value)
+                }
+              />
+            </Field>
+
+            <Field label="To">
+              <Input
+                type="date"
+                value={dateTo}
+                onChange={(event) =>
+                  setDateTo(event.target.value)
+                }
+              />
+            </Field>
           </div>
 
           <Button
@@ -759,6 +901,20 @@ function IndividualReportSearch({
           </div>
         </div>
       </Card>
+
+      <Card className="border p-4 shadow-none">
+        <Field label="Report Remarks">
+          <textarea
+            rows={3}
+            value={reportRemarks}
+            onChange={(event) =>
+              setReportRemarks(event.target.value)
+            }
+            placeholder="Remarks to appear at the bottom of the printed laboratory report"
+            className="w-full rounded border p-3 text-sm"
+          />
+        </Field>
+      </Card>
     </div>
   );
 }
@@ -776,154 +932,206 @@ function FilterCard({
   openDistrictReport,
   consolidatedTemplate,
   setConsolidatedTemplate,
-  consolidatedTest,
-  setConsolidatedTest,
+  consolidatedTests,
+  setConsolidatedTests,
   consolidatedPanel,
   setConsolidatedPanel,
   consolidatedSpecimen,
   setConsolidatedSpecimen,
 }) {
-  return (
-    <Card className="border p-5 shadow-none">
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3 lg:grid-cols-4">
-        {tab === "district" && (
-          <>
-            <Field label="Report Template">
-              <select
-                value={consolidatedTemplate}
-                onChange={(event) =>
-                  setConsolidatedTemplate(event.target.value)
-                }
-                className="w-full rounded border bg-white p-2"
-              >
-                <option value="generic">Generic Laboratory</option>
-                <option value="quantitation">Quantitation</option>
-                <option value="serotyping">Serotyping</option>
-                <option value="panel">Panel Report</option>
-                <option value="surveillance">Surveillance</option>
-              </select>
-            </Field>
+  const districtField = (
+    <Select
+      label="District"
+      value={filters.district}
+      onChange={(value) =>
+        setFilters((current) => ({
+          ...current,
+          district: value,
+        }))
+      }
+      options={opts.district}
+      anyLabel={tab === "district" ? "Any district" : "Any"}
+    />
+  );
 
+  const fromField = (
+    <Field label="From">
+      <Input
+        type="date"
+        value={filters.date_from}
+        onChange={(event) =>
+          setFilters((current) => ({
+            ...current,
+            date_from: event.target.value,
+          }))
+        }
+      />
+    </Field>
+  );
+
+  const toField = (
+    <Field label="To">
+      <Input
+        type="date"
+        value={filters.date_to}
+        onChange={(event) =>
+          setFilters((current) => ({
+            ...current,
+            date_to: event.target.value,
+          }))
+        }
+      />
+    </Field>
+  );
+
+  return (
+    <Card className="border p-3 shadow-none">
+      {tab === "district" ? (
+        <div className="grid grid-cols-1 gap-x-3 gap-y-2 md:grid-cols-3 lg:grid-cols-4 lg:items-start">
+          <Field label="Report Template">
+            <select
+              value={consolidatedTemplate}
+              onChange={(event) =>
+                setConsolidatedTemplate(event.target.value)
+              }
+              className="w-full rounded border bg-white p-2"
+            >
+              <option value="generic">Generic Laboratory</option>
+              <option value="quantitation">Quantitation</option>
+              <option value="serotyping">Serotyping</option>
+              <option value="panel">Panel Report</option>
+              <option value="surveillance">Surveillance</option>
+            </select>
+          </Field>
+
+          <Select
+            label="Panel"
+            value={consolidatedPanel || ANY}
+            onChange={(value) => {
+              setConsolidatedPanel(value === ANY ? "" : value);
+              setConsolidatedTests([]);
+            }}
+            options={opts.panels || []}
+          />
+
+          <Select
+            label="Specimen"
+            value={consolidatedSpecimen || ANY}
+            onChange={(value) =>
+              setConsolidatedSpecimen(
+                value === ANY ? "" : value
+              )
+            }
+            options={opts.sample_type || []}
+          />
+
+          <div className="lg:col-start-4 lg:row-start-1 lg:row-span-2">
+            <Field label="Tests">
+              <select
+                multiple
+                value={consolidatedTests}
+                onChange={(event) => {
+                  const values = Array.from(
+                    event.target.selectedOptions
+                  ).map((option) => option.value);
+                  setConsolidatedTests(values);
+                  if (values.length) setConsolidatedPanel("");
+                }}
+                size={7}
+                className="h-40 w-full rounded border bg-white p-2"
+              >
+                {(opts.test || []).map((testName) => (
+                  <option key={testName} value={testName}>
+                    {testName}
+                  </option>
+                ))}
+              </select>
+              <div className="mt-1 text-[11px] text-slate-500">
+                Hold Shift (or Ctrl/⌘) to select multiple tests.
+              </div>
+            </Field>
+          </div>
+
+          <div className="lg:col-start-1 lg:row-start-2">
+            {districtField}
+          </div>
+          <div className="lg:col-start-2 lg:row-start-2">
+            {fromField}
+          </div>
+          <div className="lg:col-start-3 lg:row-start-2">
+            {toField}
+          </div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-x-3 gap-y-2 md:grid-cols-3 lg:grid-cols-4">
+          <Select
+            label="Dataset"
+            value={filters.dataset}
+            onChange={(value) =>
+              setFilters((current) => ({
+                ...current,
+                dataset: value,
+                test: ANY,
+              }))
+            }
+            options={datasets}
+          />
+
+          {(tab === "filtered" ||
+            tab === "tat" ||
+            tab === "tat_report") && (
             <Select
               label="Test"
-              value={consolidatedTest || ANY}
-              onChange={(value) => {
-                setConsolidatedTest(value === ANY ? "" : value);
-                setConsolidatedPanel("");
-              }}
-              options={opts.test || []}
-            />
-
-            <Select
-              label="Panel"
-              value={consolidatedPanel || ANY}
-              onChange={(value) => {
-                setConsolidatedPanel(value === ANY ? "" : value);
-                setConsolidatedTest("");
-              }}
-              options={opts.panels || []}
-            />
-
-            <Select
-              label="Specimen"
-              value={consolidatedSpecimen || ANY}
+              value={filters.test}
               onChange={(value) =>
-                setConsolidatedSpecimen(
-                  value === ANY ? "" : value
-                )
+                setFilters((current) => ({
+                  ...current,
+                  test: value,
+                }))
               }
-              options={opts.sample_type || []}
+              options={availableTests}
             />
-          </>
-        )}
-        {tab !== "district" && (
-        <Select
-          label="Dataset"
-          value={filters.dataset}
-          onChange={(value) =>
-            setFilters((current) => ({
-              ...current,
-              dataset: value,
-              test: ANY,
-            }))
-          }
-          options={datasets}
-        />
-        )}
+          )}
 
-        {(tab === "filtered" || tab === "tat") && (
-          <Select
-            label="Test"
-            value={filters.test}
-            onChange={(value) =>
-              setFilters((current) => ({
-                ...current,
-                test: value,
-              }))
-            }
-            options={availableTests}
-          />
-        )}
+          {districtField}
 
-        <Select
-          label="District"
-          value={filters.district}
-          onChange={(value) =>
-            setFilters((current) => ({
-              ...current,
-              district: value,
-            }))
-          }
-          options={opts.district}
-          anyLabel={tab === "district" ? "Select district" : "Any"}
-        />
+          {tab === "filtered" && (
+            <Select
+              label="Sample Type"
+              value={filters.sample_type}
+              onChange={(value) =>
+                setFilters((current) => ({
+                  ...current,
+                  sample_type: value,
+                }))
+              }
+              options={opts.sample_type}
+            />
+          )}
 
-        {tab === "filtered" && (
-          <Select
-            label="Sample Type"
-            value={filters.sample_type}
-            onChange={(value) =>
-              setFilters((current) => ({
-                ...current,
-                sample_type: value,
-              }))
-            }
-            options={opts.sample_type}
-          />
-        )}
+          {tab === "filtered" && (
+            <Select
+              label="NVHCP Programme"
+              value={filters.nvhcp_program}
+              onChange={(value) =>
+                setFilters((current) => ({
+                  ...current,
+                  nvhcp_program: value,
+                }))
+              }
+              options={[
+                { key: "true", name: "Yes" },
+                { key: "false", name: "No" },
+              ]}
+            />
+          )}
 
-        {tab !== "district" && (
-        <Field label="From">
-          <Input
-            type="date"
-            value={filters.date_from}
-            onChange={(event) =>
-              setFilters((current) => ({
-                ...current,
-                date_from: event.target.value,
-              }))
-            }
-          />
-        </Field>
-        )}
+          {fromField}
+          {toField}
+        </div>
+      )}
 
-        {tab !== "district" && (
-        <Field label="To">
-          <Input
-            type="date"
-            value={filters.date_to}
-            onChange={(event) =>
-              setFilters((current) => ({
-                ...current,
-                date_to: event.target.value,
-              }))
-            }
-          />
-        </Field>
-        )}
-      </div>
-
-      <div className="mt-5 flex flex-wrap gap-2">
+      <div className="mt-3 flex flex-wrap gap-2">
         <Button onClick={run} className="bg-blue-600">
           <Funnel size={16} className="mr-2" />
           Apply
@@ -969,7 +1177,6 @@ function FilterCard({
     </Card>
   );
 }
-
 function DistrictPreview({
   items,
   total,
@@ -977,27 +1184,119 @@ function DistrictPreview({
   datasets,
   print,
   template,
-  selectedTest,
+  selectedTests,
   selectedPanel,
   selectedSpecimen,
   panels,
+  selectedRows,
+  setSelectedRows,
+  reportRemarks,
+  setReportRemarks,
+  consolidatedSort,
+  setConsolidatedSort,
 }) {
-  const panel = panels.find((item) => item.id === selectedPanel);
-  const selectedTests = new Set(
-    selectedTest ? [selectedTest] : panel?.tests || []
+  const safePanels = Array.isArray(panels) ? panels : [];
+  const panel = safePanels.find((item) => item.id === selectedPanel);
+  const selectedTestSet = new Set(
+    selectedTests?.length ? selectedTests : panel?.tests || []
   );
 
   const completedRows = items.flatMap((record) =>
     allSampleTests(record)
-      .filter(
-        (row) =>
-          row.completed &&
-          (!selectedTests.size || selectedTests.has(row.test)) &&
-          (!selectedSpecimen ||
-            row.sample_type === selectedSpecimen)
-      )
+      .filter((row) => {
+        if (!row.completed) return false;
+        if (
+          selectedSpecimen &&
+          row.sample_type !== selectedSpecimen
+        ) {
+          return false;
+        }
+
+        if (selectedPanel) {
+          const selectedPanelDefinition = safePanels.find(
+            (item) => item.id === selectedPanel
+          );
+          const panelTests = new Set(
+            selectedPanelDefinition?.tests || []
+          );
+
+          return (
+            (row.panel_ids || []).includes(selectedPanel) ||
+            panelTests.has(row.test)
+          );
+        }
+
+        if (selectedTestSet.size) {
+          return selectedTestSet.has(row.test);
+        }
+
+        return true;
+      })
       .map((row) => ({ ...row, record }))
   );
+
+  const showEpid = template === "surveillance";
+  const isPanel = template === "panel";
+  const isQuantitation =
+    template === "quantitation" || template === "serotyping";
+  const isGeneric = template === "generic";
+
+  const headings = [
+    "Select",
+    "Sl.",
+    "Lab No.",
+    ...(showEpid ? ["EPID No."] : []),
+    "Name",
+    "Age",
+    "Sex",
+    "Requesting Institution",
+    "Date Received",
+    ...(isGeneric || isPanel ? ["Sample"] : []),
+    ...(isPanel ? ["Panel"] : []),
+    ...(isGeneric || isPanel || isQuantitation || showEpid
+      ? ["Test"]
+      : []),
+    "Result",
+    ...(isQuantitation || isPanel
+      ? ["Additional Result", "Remarks"]
+      : []),
+  ];
+
+  const sortedRows = [...completedRows].sort((a, b) => {
+    const values = {
+      lab: [a.lab_number, b.lab_number],
+      name: [a.record.name, b.record.name],
+      age: [a.record.age ?? -1, b.record.age ?? -1],
+      sex: [a.record.sex || "", b.record.sex || ""],
+      institution: [
+        a.record.requesting_institution || "",
+        b.record.requesting_institution || "",
+      ],
+      date: [a.record.date || "", b.record.date || ""],
+      sample: [a.sample_type || "", b.sample_type || ""],
+      test: [a.test || "", b.test || ""],
+      result: [a.result1 || "", b.result1 || ""],
+    };
+    const [left, right] =
+      values[consolidatedSort.column] || values.name;
+    const cmp =
+      typeof left === "number"
+        ? left - right
+        : String(left).localeCompare(String(right), undefined, {
+            numeric: true,
+            sensitivity: "base",
+          });
+    return consolidatedSort.direction === "asc" ? cmp : -cmp;
+  });
+
+  const toggleSort = (column) =>
+    setConsolidatedSort((current) => ({
+      column,
+      direction:
+        current.column === column && current.direction === "asc"
+          ? "desc"
+          : "asc",
+    }));
 
   return (
     <Card className="overflow-hidden border shadow-none">
@@ -1012,109 +1311,224 @@ function DistrictPreview({
             {selectedSpecimen
               ? ` · Specimen: ${selectedSpecimen}`
               : ""}
-            {selectedTest
-              ? ` · Test: ${selectedTest}`
+            {selectedTests?.length
+              ? ` · Tests: ${selectedTests.join(", ")}`
               : panel
                 ? ` · Panel: ${panel.name}`
                 : ""}
           </div>
         </div>
-        <Button size="sm" variant="outline" onClick={print}>
+
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={print}
+          disabled={
+            completedRows.length === 0 ||
+            Object.values(selectedRows).every((value) => !value)
+          }
+        >
           <Printer size={16} className="mr-2" />
-          Preview / Print
+          Preview / Print Selected
         </Button>
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="w-full min-w-[1200px] text-sm">
           <thead>
             <tr className="text-left text-[11px] uppercase text-slate-500">
-              {[
-                "Sl.",
-                "Lab No.",
-                "EPID No.",
-                "Name",
-                "Age",
-                "Sex",
-                "Requesting Institution",
-                "Date Received",
-                template === "quantitation"
-                  ? "Result 1"
-                  : "Result",
-                ...(template === "quantitation"
-                  ? ["Result 2"]
-                  : []),
-              ].map((heading) => (
-                <th key={heading} className="px-3 py-2">
-                  {heading}
-                </th>
-              ))}
+              {headings.map((heading) => {
+                const map = {
+                  "Lab No.": "lab",
+                  Name: "name",
+                  Age: "age",
+                  Sex: "sex",
+                  "Requesting Institution": "institution",
+                  "Date Received": "date",
+                  Sample: "sample",
+                  Test: "test",
+                  Result: "result",
+                };
+                const column = map[heading];
+                return (
+                  <th key={heading} className="px-3 py-2">
+                    {column ? (
+                      <button
+                        type="button"
+                        onClick={() => toggleSort(column)}
+                        className="font-semibold hover:text-blue-600"
+                      >
+                        {heading}
+                        {consolidatedSort.column === column
+                          ? consolidatedSort.direction === "asc"
+                            ? " ↑"
+                            : " ↓"
+                          : ""}
+                      </button>
+                    ) : (
+                      heading
+                    )}
+                  </th>
+                );
+              })}
             </tr>
           </thead>
+
           <tbody>
             {!completedRows.length && (
               <tr>
                 <td
-                  colSpan={template === "quantitation" ? 10 : 9}
+                  colSpan={headings.length}
                   className="px-3 py-10 text-center text-slate-500"
                 >
-                  Select a district and test or panel, then click Apply.
+                  Select the required filters and click Apply.
                 </td>
               </tr>
             )}
 
-            {completedRows.map(({ record, ...row }, index) => {
-              const sample = (record.samples || []).find(
-                (item) =>
-                  item.lab_number === row.lab_number &&
-                  item.sample_type === row.sample_type
-              );
-              const test = (sample?.tests || []).find(
-                (item) => item.test === row.test
-              );
-              const showEpid = [
-                "mr_surveillance",
-                "diphtheria",
-                "pertussis",
-              ].includes(row.dataset);
+            {sortedRows.map((row, index) => {
+              const previous =
+                index > 0 ? sortedRows[index - 1] : null;
+              const samePatient =
+                previous?.record?.id === row.record.id;
+              const sameSample =
+                samePatient &&
+                previous?.lab_number === row.lab_number;
+              const panelName =
+                selectedPanel
+                  ? panel?.name
+                  : (row.panel_names || [])[0] || "";
 
               return (
-                <tr key={row.key} className="border-t">
+                <tr
+                  key={row.key}
+                  className={`border-t ${
+                    samePatient
+                      ? "border-slate-100"
+                      : "border-slate-300"
+                  }`}
+                >
+                  <td className="px-3 py-2">
+                    <input
+                      type="checkbox"
+                      checked={sortedRows
+                        .filter((item) => item.record.id === row.record.id)
+                        .every((item) => selectedRows[item.key])}
+                      onChange={(event) =>
+                        setSelectedRows((current) => {
+                          const next = { ...current };
+                          sortedRows
+                            .filter(
+                              (item) =>
+                                item.record.id === row.record.id
+                            )
+                            .forEach((item) => {
+                              next[item.key] =
+                                event.target.checked;
+                            });
+                          return next;
+                        })
+                      }
+                    />
+                  </td>
                   <td className="px-3 py-2">{index + 1}</td>
                   <td className="px-3 py-2 font-mono text-xs">
-                    {row.lab_number}
+                    {sameSample ? "" : row.lab_number}
                   </td>
-                  <td className="px-3 py-2 text-xs">
-                    {showEpid ? row.epid_number || "—" : ""}
-                  </td>
-                  <td className="px-3 py-2 font-medium">
-                    {record.name}
-                  </td>
-                  <td className="px-3 py-2">
-                    {record.age ?? "—"}
-                  </td>
-                  <td className="px-3 py-2">
-                    {record.sex || "—"}
-                  </td>
-                  <td className="px-3 py-2">
-                    {record.requesting_institution || "—"}
-                  </td>
-                  <td className="px-3 py-2">
-                    {fmt(record.date)}
-                  </td>
-                  <td className="px-3 py-2">
-                    {test?.result1 || "—"}
-                  </td>
-                  {template === "quantitation" && (
-                    <td className="px-3 py-2">
-                      {test?.result2 || "—"}
+                  {showEpid && (
+                    <td className="px-3 py-2 text-xs">
+                      {sameSample ? "" : row.epid_number || "—"}
                     </td>
+                  )}
+                  <td className="px-3 py-2 font-medium">
+                    {samePatient ? "" : row.record.name}
+                  </td>
+                  <td className="px-3 py-2">
+                    {samePatient ? "" : row.record.age ?? "—"}
+                  </td>
+                  <td className="px-3 py-2">
+                    {samePatient ? "" : row.record.sex || "—"}
+                  </td>
+                  <td className="px-3 py-2">
+                    {samePatient
+                      ? ""
+                      : row.record.requesting_institution || "—"}
+                  </td>
+                  <td className="px-3 py-2">
+                    {samePatient ? "" : fmt(row.record.date)}
+                  </td>
+                  {(isGeneric || isPanel) && (
+                    <td className="px-3 py-2">
+                      {sameSample ? "" : row.sample_type}
+                    </td>
+                  )}
+                  {isPanel && (
+                    <td className="px-3 py-2">
+                      {sameSample ? "" : panelName || "—"}
+                    </td>
+                  )}
+                  {(isGeneric || isPanel || isQuantitation || showEpid) && (
+                    <td className="px-3 py-2 font-medium">
+                      {row.test}
+                    </td>
+                  )}
+                  <td className="px-3 py-2">
+                    {row.result1 || "—"}
+                  </td>
+                  {(isQuantitation || isPanel) && (
+                    <>
+                      <td className="px-3 py-2">
+                        {row.result2 || "—"}
+                      </td>
+                      <td className="px-3 py-2">
+                        {row.test_remarks || "—"}
+                      </td>
+                    </>
                   )}
                 </tr>
               );
             })}
           </tbody>
         </table>
+      </div>
+
+      <div className="border-t p-4">
+        <div className="mb-3 flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              setSelectedRows(
+                Object.fromEntries(
+                  completedRows.map((row) => [row.key, true])
+                )
+              )
+            }
+          >
+            Select All Listed
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setSelectedRows({})}
+          >
+            Clear Selection
+          </Button>
+        </div>
+
+        <Field label="Report Remarks">
+          <textarea
+            rows={3}
+            value={reportRemarks}
+            onChange={(event) =>
+              setReportRemarks(event.target.value)
+            }
+            placeholder="Remarks to appear at the bottom of the consolidated report"
+            className="w-full rounded border p-3 text-sm"
+          />
+        </Field>
       </div>
     </Card>
   );
@@ -1380,7 +1794,11 @@ const Select = ({
       <option value={ANY}>{anyLabel}</option>
       {(options || []).map((option) => {
         const optionValue =
-          option.key || option.value || option.name || option;
+          option.key ||
+          option.value ||
+          option.id ||
+          option.name ||
+          option;
         const optionLabel =
           option.label || option.name || option;
         return (
@@ -1392,3 +1810,145 @@ const Select = ({
     </select>
   </Field>
 );
+
+
+function TatReport({
+  data,
+  thresholds,
+  selectedDataset,
+  datasets,
+}) {
+  const thresholdMap = new Map(
+    (thresholds || []).map((item) => [
+      `${item.dataset}::${item.item_type || "test"}::${item.test}`,
+      Number(item.threshold_days),
+    ])
+  );
+
+  const groups = new Map();
+
+  (data.points || []).forEach((point) => {
+    const dataset = point.dataset || selectedDataset || "";
+    const test = point.test || "Unknown Test";
+    const itemType = point.item_type || "test";
+    const key = `${dataset}::${itemType}::${test}`;
+
+    if (!groups.has(key)) {
+      groups.set(key, {
+        dataset,
+        test,
+        item_type: itemType,
+        values: [],
+      });
+    }
+    groups.get(key).values.push(Number(point.tat_days || 0));
+  });
+
+  const rows = [...groups.values()]
+    .map(({ dataset, test, item_type, values }) => {
+      const threshold = thresholdMap.get(
+        `${dataset}::${item_type}::${test}`
+      );
+      const hasThreshold =
+        threshold !== undefined && !Number.isNaN(threshold);
+      const within = hasThreshold
+        ? values.filter((value) => value <= threshold).length
+        : null;
+
+      return {
+        dataset,
+        test,
+        item_type,
+        count: values.length,
+        average:
+          values.reduce((sum, value) => sum + value, 0) /
+          Math.max(1, values.length),
+        threshold,
+        within,
+        compliance:
+          hasThreshold && values.length
+            ? (within / values.length) * 100
+            : null,
+      };
+    })
+    .sort((a, b) =>
+      `${a.dataset} ${a.test}`.localeCompare(
+        `${b.dataset} ${b.test}`
+      )
+    );
+
+  return (
+    <Card className="overflow-hidden border shadow-none">
+      <div className="border-b px-4 py-3">
+        <div className="font-semibold">TAT Compliance Report</div>
+        <div className="text-xs text-slate-500">
+          Thresholds are maintained in Master Data → TAT Threshold Master.
+        </div>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[900px] text-sm">
+          <thead>
+            <tr className="text-left text-[11px] uppercase text-slate-500">
+              <th className="px-3 py-2">Dataset</th>
+              <th className="px-3 py-2">Type</th>
+              <th className="px-3 py-2">Test / Panel</th>
+              <th className="px-3 py-2">Completed</th>
+              <th className="px-3 py-2">Average TAT</th>
+              <th className="px-3 py-2">Threshold</th>
+              <th className="px-3 py-2">Within Threshold</th>
+              <th className="px-3 py-2">% Compliance</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length === 0 ? (
+              <tr>
+                <td colSpan={8} className="p-8 text-center text-slate-500">
+                  No completed tests for the selected period.
+                </td>
+              </tr>
+            ) : (
+              rows.map((row) => (
+                <tr
+                  key={`${row.dataset}::${row.item_type}::${row.test}`}
+                  className="border-t"
+                >
+                  <td className="px-3 py-2">
+                    {datasets.find(
+                      (dataset) => dataset.key === row.dataset
+                    )?.name || row.dataset || "—"}
+                  </td>
+                  <td className="px-3 py-2">
+                    {row.item_type === "panel" ? "Panel" : "Test"}
+                  </td>
+                  <td className="px-3 py-2 font-medium">
+                    {row.test}
+                  </td>
+                  <td className="px-3 py-2">{row.count}</td>
+                  <td className="px-3 py-2">
+                    {row.average.toFixed(2)} days
+                  </td>
+                  <td className="px-3 py-2">
+                    {row.threshold === undefined
+                      ? "Not configured"
+                      : `${row.threshold} days`}
+                  </td>
+                  <td className="px-3 py-2">
+                    {row.within === null
+                      ? "—"
+                      : `${row.within}/${row.count}`}
+                  </td>
+                  <td className="px-3 py-2">
+                    {row.compliance === null
+                      ? "—"
+                      : `${row.compliance.toFixed(1)}%`}
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
+}

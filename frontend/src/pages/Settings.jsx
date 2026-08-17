@@ -14,6 +14,8 @@ const TABS = [
   { key: "district", label: "District Master" },
   { key: "sample_type", label: "Sample Master" },
   { key: "panel", label: "Panel Master" },
+  { key: "report_remark", label: "Report Remarks Master" },
+  { key: "tat_threshold", label: "TAT Threshold Master" },
 ];
 
 const uniqueSorted = (values) =>
@@ -27,6 +29,7 @@ export default function Settings() {
     test: [],
     district: [],
     sample_type: [],
+    report_remark: [],
   });
   const [selectedKey, setSelectedKey] = useState("");
   const [datasetForm, setDatasetForm] = useState({
@@ -49,6 +52,10 @@ export default function Settings() {
   const [unlocking, setUnlocking] = useState(false);
   const [editingTest, setEditingTest] = useState("");
   const [editingTestValue, setEditingTestValue] = useState("");
+  const [tatThresholds, setTatThresholds] = useState([]);
+  const [tatDataset, setTatDataset] = useState("");
+  const [tatValues, setTatValues] = useState({});
+  const [savingTat, setSavingTat] = useState(false);
 
   const selectDataset = (dataset) => {
     setSelectedKey(dataset.key);
@@ -66,6 +73,8 @@ export default function Settings() {
               sample_type: mapping.sample_type || "",
               tests: uniqueSorted(mapping.tests),
               auto_assign: !!mapping.auto_assign,
+              panels: uniqueSorted(mapping.panels),
+              auto_assign_panels: !!mapping.auto_assign_panels,
             }))
           : uniqueSorted(dataset.sample_types).map((sampleType) => ({
               sample_type: sampleType,
@@ -77,17 +86,32 @@ export default function Settings() {
 
   const load = async () => {
     try {
-      const [datasetResponse, masterResponse, panelResponse] = await Promise.all([
-        api.get("/datasets"), api.get("/masters"), api.get("/panels"),
+      const [
+        datasetResponse,
+        masterResponse,
+        panelResponse,
+        tatResponse,
+      ] = await Promise.all([
+        api.get("/datasets"),
+        api.get("/masters"),
+        api.get("/panels"),
+        api.get("/tat-thresholds"),
       ]);
 
       const loadedDatasets = datasetResponse.data || [];
       setDatasets(loadedDatasets);
       setPanels(panelResponse.data || []);
+      setTatThresholds(tatResponse.data || []);
+      setTatDataset((current) =>
+        current || loadedDatasets[0]?.key || ""
+      );
       setMasters({
         test: uniqueSorted(masterResponse.data?.test),
         district: uniqueSorted(masterResponse.data?.district),
         sample_type: uniqueSorted(masterResponse.data?.sample_type),
+        report_remark: uniqueSorted(
+          masterResponse.data?.report_remark
+        ),
       });
 
       if (loadedDatasets.length) {
@@ -171,7 +195,13 @@ export default function Settings() {
           ? existing
           : [
               ...existing,
-              { sample_type: sampleType, tests: [], auto_assign: false },
+              {
+                sample_type: sampleType,
+                tests: [],
+                auto_assign: false,
+                panels: [],
+                auto_assign_panels: false,
+              },
             ]
         : existing.filter((mapping) => mapping.sample_type !== sampleType);
 
@@ -215,6 +245,27 @@ export default function Settings() {
     }));
   };
 
+  const toggleSamplePanel = (sampleType, panelId, checked) => {
+    updateSampleMapping(sampleType, (mapping) => ({
+      ...mapping,
+      panels: checked
+        ? uniqueSorted([...(mapping.panels || []), panelId])
+        : (mapping.panels || []).filter(
+            (item) => item !== panelId
+          ),
+    }));
+  };
+
+  const toggleSampleAutoAssignPanels = (
+    sampleType,
+    checked
+  ) => {
+    updateSampleMapping(sampleType, (mapping) => ({
+      ...mapping,
+      auto_assign_panels: !!checked,
+    }));
+  };
+
   const saveDataset = async () => {
     if (!datasetForm.key || !datasetForm.name || !datasetForm.prefix) {
       toast.error("Dataset key, name and prefix are required");
@@ -228,6 +279,8 @@ export default function Settings() {
           sample_type: mapping.sample_type,
           tests: uniqueSorted(mapping.tests),
           auto_assign: !!mapping.auto_assign,
+          panels: uniqueSorted(mapping.panels),
+          auto_assign_panels: !!mapping.auto_assign_panels,
         })
       );
 
@@ -250,7 +303,12 @@ export default function Settings() {
   };
 
   const currentValues = useMemo(
-    () => (activeTab === "dataset" || activeTab === "panel" ? [] : masters[activeTab] || []),
+    () =>
+      activeTab === "dataset" ||
+      activeTab === "panel" ||
+      activeTab === "tat_threshold"
+        ? []
+        : masters[activeTab] || [],
     [activeTab, masters]
   );
 
@@ -369,6 +427,92 @@ export default function Settings() {
       toast.error(
         error?.response?.data?.detail || "Unable to update test name"
       );
+    }
+  };
+
+
+  const tatItemsForDataset = useMemo(() => {
+    const dataset = datasets.find(
+      (item) => item.key === tatDataset
+    );
+
+    const tests = uniqueSorted(dataset?.tests || []).map(
+      (name) => ({
+        key: `test::${name}`,
+        name,
+        item_type: "test",
+      })
+    );
+
+    const panelItems = panels
+      .filter(
+        (panel) =>
+          panel.dataset === tatDataset &&
+          panel.active !== false
+      )
+      .sort((a, b) =>
+        String(a.name).localeCompare(String(b.name))
+      )
+      .map((panel) => ({
+        key: `panel::${panel.name}`,
+        name: panel.name,
+        item_type: "panel",
+      }));
+
+    return [...tests, ...panelItems];
+  }, [datasets, panels, tatDataset]);
+
+  useEffect(() => {
+    if (!tatDataset) return;
+
+    const next = {};
+    tatItemsForDataset.forEach((item) => {
+      const existing = tatThresholds.find(
+        (threshold) =>
+          threshold.dataset === tatDataset &&
+          (threshold.item_type || "test") === item.item_type &&
+          threshold.test === item.name
+      );
+
+      next[item.key] =
+        existing?.threshold_days === undefined
+          ? ""
+          : String(existing.threshold_days);
+    });
+
+    setTatValues(next);
+  }, [tatDataset, tatItemsForDataset, tatThresholds]);
+
+  const saveTatDataset = async () => {
+    if (!tatDataset) {
+      toast.error("Select a dataset");
+      return;
+    }
+
+    setSavingTat(true);
+    try {
+      await api.post("/tat-thresholds/bulk", {
+        dataset: tatDataset,
+        items: tatItemsForDataset.map((item) => {
+          const value = String(tatValues[item.key] ?? "").trim();
+          return {
+            test: item.name,
+            item_type: item.item_type,
+            threshold_days:
+              value === "" ? null : Number(value),
+          };
+        }),
+      });
+
+      toast.success("TAT thresholds saved");
+      await load();
+    } catch (error) {
+      toast.error(
+        error?.response?.data?.detail ||
+          "Unable to save TAT thresholds"
+      );
+    } finally {
+      setSavingTat(false);
     }
   };
 
@@ -528,8 +672,17 @@ export default function Settings() {
                 <SampleTestMappings
                   mappings={datasetForm.sample_mappings || []}
                   tests={masters.test}
+                  panels={panels.filter(
+                    (panel) =>
+                      panel.dataset === datasetForm.key &&
+                      panel.active !== false
+                  )}
                   onToggleTest={toggleSampleTest}
                   onToggleAutoAssign={toggleSampleAutoAssign}
+                  onTogglePanel={toggleSamplePanel}
+                  onToggleAutoAssignPanels={
+                    toggleSampleAutoAssignPanels
+                  }
                 />
               </div>
             </div>
@@ -548,6 +701,124 @@ export default function Settings() {
         </div>
       ) : activeTab === "panel" ? (
         <PanelMaster panels={panels} datasets={datasets} tests={masters.test} form={panelForm} selectPanel={selectPanel} newPanel={newPanel} setForm={setPanelForm} toggleTest={togglePanelTest} save={savePanel} remove={deletePanel} />
+      ) : activeTab === "tat_threshold" ? (
+        <Card className="border border-slate-200 p-5 shadow-none">
+          <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+            <div>
+              <h2 className="font-heading text-xl font-semibold text-slate-900">
+                TAT Threshold Master
+              </h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Enter the acceptable TAT for every test and panel in the
+                selected dataset, then save the dataset once.
+              </p>
+            </div>
+
+            <div className="w-full md:w-80">
+              <Field label="Dataset">
+                <select
+                  value={tatDataset}
+                  onChange={(event) =>
+                    setTatDataset(event.target.value)
+                  }
+                  className="w-full rounded border bg-white p-2"
+                >
+                  <option value="">Select dataset</option>
+                  {datasets.map((dataset) => (
+                    <option key={dataset.key} value={dataset.key}>
+                      {dataset.name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+          </div>
+
+          <div className="mt-5 overflow-hidden rounded-md border border-slate-200">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50">
+                <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
+                  <th className="w-28 px-4 py-3">Type</th>
+                  <th className="px-4 py-3">Test / Panel</th>
+                  <th className="w-52 px-4 py-3">
+                    TAT Threshold (days)
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {!tatDataset ? (
+                  <tr>
+                    <td
+                      colSpan={3}
+                      className="p-8 text-center text-slate-500"
+                    >
+                      Select a dataset to enter TAT thresholds.
+                    </td>
+                  </tr>
+                ) : tatItemsForDataset.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={3}
+                      className="p-8 text-center text-slate-500"
+                    >
+                      No tests or panels are configured for this dataset.
+                    </td>
+                  </tr>
+                ) : (
+                  tatItemsForDataset.map((item) => (
+                    <tr key={item.key} className="border-t">
+                      <td className="px-4 py-2">
+                        <span
+                          className={`inline-flex rounded-full px-2 py-1 text-[11px] font-semibold ${
+                            item.item_type === "panel"
+                              ? "bg-indigo-50 text-indigo-700"
+                              : "bg-slate-100 text-slate-700"
+                          }`}
+                        >
+                          {item.item_type === "panel"
+                            ? "Panel"
+                            : "Test"}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2 font-medium text-slate-800">
+                        {item.name}
+                      </td>
+                      <td className="px-4 py-2">
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.5"
+                          value={tatValues[item.key] ?? ""}
+                          onChange={(event) =>
+                            setTatValues((current) => ({
+                              ...current,
+                              [item.key]: event.target.value,
+                            }))
+                          }
+                          placeholder="e.g. 3"
+                        />
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="mt-5 flex justify-end">
+            <Button
+              type="button"
+              onClick={saveTatDataset}
+              disabled={!tatDataset || savingTat}
+              className="bg-teal-600 text-white hover:bg-teal-700"
+            >
+              <FloppyDisk size={16} className="mr-2" />
+              {savingTat
+                ? "Saving…"
+                : "Save / Update Dataset Thresholds"}
+            </Button>
+          </div>
+        </Card>
       ) : (
         <Card className="p-5 border border-slate-200 shadow-none">
           <h2 className="font-heading text-xl font-semibold text-slate-900">
@@ -671,8 +942,11 @@ function PanelMaster({ panels, datasets, tests, form, selectPanel, newPanel, set
 function SampleTestMappings({
   mappings,
   tests,
+  panels,
   onToggleTest,
   onToggleAutoAssign,
+  onTogglePanel,
+  onToggleAutoAssignPanels,
 }) {
   if (!mappings.length) {
     return (
@@ -734,6 +1008,66 @@ function SampleTestMappings({
                   </label>
                 ))
               )}
+            </div>
+
+            <div className="mt-4 border-t border-slate-200 pt-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div className="text-sm font-semibold text-slate-800">
+                    Allowed Test Panels
+                  </div>
+                  <p className="text-xs text-slate-500">
+                    Select panels valid for this sample type.
+                  </p>
+                </div>
+                <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+                  <Checkbox
+                    checked={!!mapping.auto_assign_panels}
+                    onCheckedChange={(checked) =>
+                      onToggleAutoAssignPanels(
+                        mapping.sample_type,
+                        !!checked
+                      )
+                    }
+                  />
+                  Auto-assign mapped panels
+                </label>
+              </div>
+              <div className="mt-3 grid max-h-48 grid-cols-1 gap-1 overflow-y-auto rounded-md border border-slate-200 bg-slate-50 p-2 sm:grid-cols-2 lg:grid-cols-3">
+                {panels.length === 0 ? (
+                  <div className="p-2 text-sm text-slate-500">
+                    No active panels available for this dataset.
+                  </div>
+                ) : (
+                  panels.map((panel) => (
+                    <label
+                      key={panel.id}
+                      className="flex items-start gap-2 rounded px-2 py-1.5 text-sm hover:bg-white"
+                    >
+                      <Checkbox
+                        checked={(mapping.panels || []).includes(
+                          panel.id
+                        )}
+                        onCheckedChange={(checked) =>
+                          onTogglePanel(
+                            mapping.sample_type,
+                            panel.id,
+                            !!checked
+                          )
+                        }
+                      />
+                      <span>
+                        <span className="font-medium">
+                          {panel.name}
+                        </span>
+                        <span className="block text-[11px] text-slate-500">
+                          {(panel.tests || []).length} tests
+                        </span>
+                      </span>
+                    </label>
+                  ))
+                )}
+              </div>
             </div>
           </Card>
         ))}
