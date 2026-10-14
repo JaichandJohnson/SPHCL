@@ -1010,6 +1010,11 @@ async def seed_defaults():
     await db.master_sessions.create_index("expires_at")
     await db.records.create_index("samples.dataset")
     await db.records.create_index("samples.lab_number")
+    await db.records.create_index(
+        [("samples.dataset", 1), ("samples.lab_number", 1)],
+        unique=True,
+        name="samples.dataset_1_samples.lab_number_1",
+    )
     await db.records.create_index("samples.epid_number")
     await db.records.create_index("samples.tests.test")
     await db.records.create_index("samples.sample_type")
