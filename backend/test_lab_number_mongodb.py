@@ -5,20 +5,23 @@ import uuid
 import unittest
 from unittest.mock import patch
 
-# Safety check BEFORE importing server.py.
+# Safety checks before importing the application.
 if os.environ.get("DB_NAME") != "mds_lims_test":
     raise RuntimeError("Refusing to run outside mds_lims_test")
 
 mongo_url = os.environ.get("MONGO_URL", "")
 if not mongo_url.startswith("mongodb+srv://mds_restore_test:"):
-    raise RuntimeError("Test MongoDB user is required")
+    raise RuntimeError("Restricted test MongoDB user is required")
 
 import server
 
 
 class MongoDBLabNumberTests(unittest.IsolatedAsyncioTestCase):
-     async def asyncSetUp(self):
-        self.client = server.AsyncIOMotorClient(os.environ["MONGO_URL"])
+
+    async def asyncSetUp(self):
+        self.client = server.AsyncIOMotorClient(
+            os.environ["MONGO_URL"]
+        )
         self.original_db = server.db
         server.db = self.client["mds_lims_test"]
 
@@ -33,10 +36,12 @@ class MongoDBLabNumberTests(unittest.IsolatedAsyncioTestCase):
             "sequence_year": 2026,
             "active": True,
         })
-   
+
     async def asyncTearDown(self):
         try:
-            await server.db.datasets.delete_one({"key": self.key})
+            await server.db.datasets.delete_one(
+                {"key": self.key}
+            )
         finally:
             server.db = self.original_db
             self.client.close()
