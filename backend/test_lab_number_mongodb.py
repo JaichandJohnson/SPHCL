@@ -17,8 +17,11 @@ import server
 
 
 class MongoDBLabNumberTests(unittest.IsolatedAsyncioTestCase):
+     async def asyncSetUp(self):
+        self.client = server.AsyncIOMotorClient(os.environ["MONGO_URL"])
+        self.original_db = server.db
+        server.db = self.client["mds_lims_test"]
 
-    async def asyncSetUp(self):
         self.key = "qa_number_" + uuid.uuid4().hex
         self.prefix = "QATEST"
 
@@ -30,10 +33,13 @@ class MongoDBLabNumberTests(unittest.IsolatedAsyncioTestCase):
             "sequence_year": 2026,
             "active": True,
         })
-
+   
     async def asyncTearDown(self):
-        # Remove only the dataset created by this test.
-        await server.db.datasets.delete_one({"key": self.key})
+        try:
+            await server.db.datasets.delete_one({"key": self.key})
+        finally:
+            server.db = self.original_db
+            self.client.close()
 
     async def test_existing_sequence_and_uniqueness(self):
         with patch.object(server, "lab_year", return_value=2026):
