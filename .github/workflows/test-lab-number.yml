@@ -6,6 +6,7 @@ on:
 
 jobs:
   test:
+    if: github.ref == 'refs/heads/feature/lab-number-uniqueness'
     runs-on: ubuntu-latest
 
     steps:
@@ -20,6 +21,14 @@ jobs:
       - name: Install dependencies
         run: pip install -r backend/requirements.txt
 
-      - name: Run laboratory number tests
+      - name: Run simulated numbering tests
         working-directory: backend
         run: python -m unittest test_lab_number_transition -v
+
+      - name: Run real MongoDB numbering tests
+        working-directory: backend
+        env:
+          MONGO_URL: ${{ secrets.TEST_MONGO_URL }}
+          DB_NAME: mds_lims_test
+          ENABLE_GOOGLE_DRIVE_BACKUP: "false"
+        run: python -m unittest test_lab_number_mongodb -v
