@@ -1,0 +1,35 @@
+
+name: Preview Production 2026 Lab Number Migration
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout migration feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/migrate-2026-lab-numbers
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install MongoDB driver
+        run: pip install motor
+
+      - name: Run read-only production preview
+        working-directory: backend
+        env:
+          PROD_MONGO_URL: ${{ secrets.PROD_MONGO_URL }}
+          DB_NAME: sphcl_lab
+          MIGRATION_MODE: preview
+        run: python migrate_production_2026_lab_numbers.py
