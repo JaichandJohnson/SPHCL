@@ -1,0 +1,62 @@
+
+name: Apply Production 2026 Lab Number Migration
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Type APPLY_2026_TO_SPHCL_LAB"
+        required: true
+        type: string
+      backup_restorable:
+        description: "Backup restored and verified?"
+        required: true
+        type: boolean
+        default: false
+      writes_paused:
+        description: "All production writes paused?"
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-2026-lab-migration
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    if: >-
+      inputs.confirmation == 'APPLY_2026_TO_SPHCL_LAB' &&
+      inputs.backup_restorable == true &&
+      inputs.writes_paused == true
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout migration branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/migrate-2026-lab-numbers
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install MongoDB driver
+        run: pip install motor
+
+      - name: Apply production migration
+        working-directory: backend
+        env:
+          PROD_MONGO_URL: ${{ secrets.PROD_MONGO_URL }}
+          DB_NAME: sphcl_lab
+          MIGRATION_MODE: apply
+          CONFIRM_PRODUCTION_MIGRATION: ${{ inputs.confirmation }}
+          CONFIRM_BACKUP_RESTORABLE: "YES"
+          CONFIRM_WRITES_PAUSED: "YES"
+        run: python migrate_production_2026_lab_numbers.py
