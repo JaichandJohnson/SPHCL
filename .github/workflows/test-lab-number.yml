@@ -3,6 +3,15 @@ name: Laboratory Number Tests
 
 on:
   workflow_dispatch:
+    inputs:
+      migration_mode:
+        description: "2026 laboratory number migration"
+        required: true
+        type: choice
+        default: preview
+        options:
+          - preview
+          - apply
 
 jobs:
   test:
@@ -72,9 +81,10 @@ jobs:
           DB_NAME: mds_lims_test
           ENABLE_GOOGLE_DRIVE_BACKUP: "false"
         run: python -m unittest test_unique_lab_number_index -v
-      - name: Preview 2026 laboratory number migration
+      - name: Run 2026 laboratory number migration
         working-directory: backend
         env:
           TEST_MONGO_URL: ${{ secrets.TEST_MONGO_URL }}
           DB_NAME: mds_lims_test
+          MIGRATION_MODE: ${{ inputs.migration_mode }}
         run: python migrate_2026_lab_numbers.py
