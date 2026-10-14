@@ -1,4 +1,4 @@
-
+import asyncio
 import os
 import uuid
 import unittest
@@ -129,6 +129,51 @@ class LabRecordWorkflowTests(unittest.IsolatedAsyncioTestCase):
             saved["lab_number"],
             original_number
         )
+
+    async def test_concurrent_record_creation(self):
+        # Create 100 laboratory records simultaneously.
+        async def create_one(index):
+            payload = server.LabRecordCreate(
+                dataset=self.key,
+                date="2026-10-14",
+                name="AUTOMATED QA TEST",
+                sample_type="Serum",
+                test="QA Test"
+            )
+
+            return await server.create_record(
+                payload,
+                user={"user_id": "automated_qa"}
+            )
+
+        with patch.object(server, "lab_year", return_value=2026):
+            records = await asyncio.gather(*[
+                create_one(i) for i in range(100)
+            ])
+
+        # Verify 100 records were created.
+        self.assertEqual(len(records), 100)
+
+        # Verify all laboratory numbers are unique.
+        numbers = [record.lab_number for record in records]
+
+        self.assertEqual(len(set(numbers)), 100)
+
+        # Verify the expected numbering sequence.
+        expected = {
+            f"{self.prefix} {n}/26"
+            for n in range(1, 101)
+        }
+
+        self.assertEqual(set(numbers), expected)
+
+        # Verify all records were saved in MongoDB.
+        saved_count = await server.db.records.count_documents({
+            "dataset": self.key,
+            "name": "AUTOMATED QA TEST"
+        })
+
+        self.assertEqual(saved_count, 100)
 
 
 if __name__ == "__main__":
