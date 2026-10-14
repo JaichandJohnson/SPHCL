@@ -20,6 +20,55 @@ jobs:
       - name: Install dependencies
         run: pip install -r backend/requirements.txt
 
-      - name: Run laboratory number tests
+      - name: Run simulated numbering tests
         working-directory: backend
         run: python -m unittest test_lab_number_transition -v
+
+      - name: Run real MongoDB numbering tests      
+        working-directory: backend
+        env:
+          MONGO_URL: ${{ secrets.TEST_MONGO_URL }}
+          DB_NAME: mds_lims_test
+          ENABLE_GOOGLE_DRIVE_BACKUP: "false"
+        run: python -m unittest test_lab_number_mongodb -v
+        
+      - name: Run laboratory record workflow tests
+        working-directory: backend
+        env:
+          MONGO_URL: ${{ secrets.TEST_MONGO_URL }}
+          DB_NAME: mds_lims_test
+          ENABLE_GOOGLE_DRIVE_BACKUP: "false"
+        run: python -m unittest test_lab_record_workflow -v
+
+
+      - name: Run MR Surveillance numbering tests
+        working-directory: backend
+        env:
+          MONGO_URL: ${{ secrets.TEST_MONGO_URL }}
+          DB_NAME: mds_lims_test
+          ENABLE_GOOGLE_DRIVE_BACKUP: "false"
+        run: python -m unittest test_mr_numbering -v
+
+      - name: Run Rabies numbering tests
+        working-directory: backend
+        env:
+          MONGO_URL: ${{ secrets.TEST_MONGO_URL }}
+          DB_NAME: mds_lims_test
+          ENABLE_GOOGLE_DRIVE_BACKUP: "false"
+        run: python -m unittest test_rabies_numbering -v
+
+      - name: Run complete special dataset numbering tests
+        working-directory: backend
+        env:
+          MONGO_URL: ${{ secrets.TEST_MONGO_URL }}
+          DB_NAME: mds_lims_test
+          ENABLE_GOOGLE_DRIVE_BACKUP: "false"
+        run: python -m unittest test_complete_lab_numbering -v
+
+      - name: Verify MongoDB unique laboratory number index
+        working-directory: backend
+        env:
+          MONGO_URL: ${{ secrets.TEST_MONGO_URL }}
+          DB_NAME: mds_lims_test
+          ENABLE_GOOGLE_DRIVE_BACKUP: "false"
+        run: python -m unittest test_unique_lab_number_index -v

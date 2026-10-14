@@ -1010,6 +1010,11 @@ async def seed_defaults():
     await db.master_sessions.create_index("expires_at")
     await db.records.create_index("samples.dataset")
     await db.records.create_index("samples.lab_number")
+    await db.records.create_index(
+        [("samples.dataset", 1), ("samples.lab_number", 1)],
+        unique=True,
+        name="samples.dataset_1_samples.lab_number_1",
+    )
     await db.records.create_index("samples.epid_number")
     await db.records.create_index("samples.tests.test")
     await db.records.create_index("samples.sample_type")
@@ -1873,12 +1878,33 @@ def _has_recorded_result(test):
     return any(str(test.get(field) or "").strip() for field in ("result1", "result2", "result_date"))
 
 
+DUPLICATE_SPECIMEN_MESSAGE = (
+    "This specimen type has already been added to this patient record. "
+    "If needed, open a new record."
+)
+
+
 def _validate_unique_sample_types(samples):
+    """Disallow duplicate specimen types within each dataset of a patient record.
+
+    Special-dataset aliases that produce the same lab-number prefix are treated
+    as equivalent, preventing duplicate generated laboratory numbers.
+    """
     seen = set()
     for sample in samples:
-        key = _sample_key(sample)
+        dataset = normalize_key(sample.get("dataset") or "")
+        sample_type = re.sub(r"\s+", " ", str(sample.get("sample_type") or "").strip()).casefold()
+        if dataset == "mr_surveillance":
+            specimen_key = mr_sample_prefix(sample_type)
+        elif dataset == "pertussis":
+            specimen_key = pertussis_sample_prefix(sample_type)
+        elif dataset == "rabies":
+            specimen_key = rabies_sample_suffix(sample_type)
+        else:
+            specimen_key = sample_type
+        key = (dataset, specimen_key)
         if key in seen:
-            raise HTTPException(status_code=400, detail=f"Duplicate sample type '{sample.get('sample_type')}' in dataset '{sample.get('dataset')}'. Add tests to the existing sample instead.")
+            raise HTTPException(status_code=400, detail=DUPLICATE_SPECIMEN_MESSAGE)
         seen.add(key)
 
 
@@ -1950,8 +1976,7 @@ async def create_record(payload: LabRecordCreate, user=Depends(get_current_user)
         (
             pertussis_number,
             pertussis_year,
-            pertussis_master_prefix,
-            pertussis_year,
+            pertussis_master_prefix,            
         ) = await generate_pertussis_patient_number()
 
         assign_pertussis_lab_numbers(
