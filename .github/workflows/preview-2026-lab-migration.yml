@@ -1,0 +1,27 @@
+name: Preview 2026 Lab Number Migration
+
+on:
+  workflow_dispatch:
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install MongoDB driver
+        run: pip install motor
+
+      - name: Run read-only migration preview
+        working-directory: backend
+        env:
+          TEST_MONGO_URL: ${{ secrets.TEST_MONGO_URL }}
+          DB_NAME: mds_lims_test
+        run: python migrate_2026_lab_numbers.py
