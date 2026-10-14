@@ -135,7 +135,23 @@ async def main():
             return
 
         print("Starting test database migration...")
+        # Verify the test database backup before applying changes
+        backup_name = "records_backup_before_2026_migration"
 
+        if backup_name not in await db.list_collection_names():
+            raise RuntimeError(
+                "Migration stopped: backup collection not found."
+            )
+
+        backup_count = await db[backup_name].count_documents({})
+
+        if backup_count != EXPECTED_RECORDS:
+            raise RuntimeError(
+                f"Migration stopped: expected {EXPECTED_RECORDS} "
+                f"backup records, found {backup_count}."
+            )
+
+        print(f"Backup verified: {backup_count} records")
         updated_records = 0
 
         for record_id, changes in affected:
