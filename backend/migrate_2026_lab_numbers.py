@@ -38,7 +38,7 @@ async def main():
 
     client = AsyncIOMotorClient(
         MONGO_URL,
-        serverSelectionTimeoutMS=10000
+        serverSelectionTimeoutMS=10000,
     )
 
     try:
@@ -74,3 +74,89 @@ async def main():
 
             if new_record_number is not None:
                 changes["lab_number"] = new_record_number
+                field_count += 1
+
+            for index, sample in enumerate(samples):
+                old_number = sample.get("lab_number")
+                new_number = updated_number(old_number)
+
+                if new_number is not None:
+                    changes[
+                        f"samples.{index}.lab_number"
+                    ] = new_number
+                    field_count += 1
+
+                final_number = (
+                    new_number
+                    if new_number is not None
+                    else old_number
+                )
+
+                if isinstance(final_number, str) and final_number:
+                    dataset = sample.get("dataset") or record.get(
+                        "dataset"
+                    )
+                    number_owners[
+                        (dataset, final_number)
+                    ].add(str(record_id))
+
+            if changes:
+                affected.append((record_id, changes))
+
+        duplicates = [
+            key
+            for key, owners in number_owners.items()
+            if len(owners) > 1
+        ]
+
+        if duplicates:
+            raise RuntimeError(
+                f"Duplicate laboratory numbers detected: "
+                f"{duplicates[:10]}"
+            )
+
+        print(f"Mode: {MODE}")
+        print(f"Total records: {len(records)}")
+        print(f"Affected records: {len(affected)}")
+        print(f"Fields to update: {field_count}")
+        print(f"Duplicate groups: {len(duplicates)}")
+
+        if (
+            len(records) != EXPECTED_RECORDS
+            or len(affected) != EXPECTED_AFFECTED_RECORDS
+            or field_count != EXPECTED_FIELDS
+        ):
+            raise RuntimeError(
+                "Expected counts do not match. Migration stopped."
+            )
+
+        if MODE == "preview":
+            print("PREVIEW COMPLETE - NO DATABASE CHANGES")
+            return
+
+        print("Starting test database migration...")
+
+        updated_records = 0
+
+        for record_id, changes in affected:
+            result = await db.records.update_one(
+                {"_id": record_id},
+                {"$set": changes},
+            )
+
+            if result.modified_count != 1:
+                raise RuntimeError(
+                    f"Update failed for record {record_id}"
+                )
+
+            updated_records += 1
+
+        print(f"Updated records: {updated_records}")
+        print("TEST DATABASE MIGRATION COMPLETE")
+
+    finally:
+        client.close()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
