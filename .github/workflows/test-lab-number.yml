@@ -87,4 +87,5 @@ jobs:
           TEST_MONGO_URL: ${{ secrets.TEST_MONGO_URL }}
           DB_NAME: mds_lims_test
           MIGRATION_MODE: ${{ inputs.migration_mode }}
+          CONFIRM_TEST_MIGRATION: ${{ inputs.migration_mode == 'apply' && 'APPLY_TO_MDS_LIMS_TEST' || 'NO' }}
         run: python migrate_2026_lab_numbers.py
