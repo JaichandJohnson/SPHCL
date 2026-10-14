@@ -85,6 +85,51 @@ class LabRecordWorkflowTests(unittest.IsolatedAsyncioTestCase):
             expected
         )
 
+    async def test_edit_cannot_change_lab_number(self):
+        # Create a temporary laboratory record.
+        create_payload = server.LabRecordCreate(
+            dataset=self.key,
+            date="2026-10-14",
+            name="AUTOMATED QA TEST",
+            sample_type="Serum",
+            test="QA Test"
+        )
+
+        with patch.object(server, "lab_year", return_value=2026):
+            record = await server.create_record(
+                create_payload,
+                user={"user_id": "automated_qa"}
+            )
+
+        original_number = record.lab_number
+
+        # Attempt to change the laboratory number.
+        update_payload = server.LabRecordUpdate(
+            name="AUTOMATED QA TEST",
+            lab_number="INVALID-MANUAL-NUMBER"
+        )
+
+        updated = await server.update_record(
+            record.id,
+            update_payload,
+            user={"user_id": "automated_qa"}
+        )
+
+        self.assertEqual(
+            updated["lab_number"],
+            original_number
+        )
+
+        # Verify that MongoDB still stores the original number.
+        saved = await server.db.records.find_one({
+            "id": record.id
+        })
+
+        self.assertEqual(
+            saved["lab_number"],
+            original_number
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
