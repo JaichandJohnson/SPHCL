@@ -1,11 +1,17 @@
 import asyncio
 import os
 import re
+from collections import defaultdict
 
 from motor.motor_asyncio import AsyncIOMotorClient
 
 DB_NAME = os.environ.get("DB_NAME", "")
 MONGO_URL = os.environ.get("TEST_MONGO_URL", "")
+MODE = os.environ.get("MIGRATION_MODE", "preview").lower()
+
+EXPECTED_RECORDS = 917
+EXPECTED_AFFECTED_RECORDS = 902
+EXPECTED_FIELDS = 1807
 
 YEAR_SUFFIX = re.compile(r"/\d{2}$")
 
@@ -22,67 +28,49 @@ def updated_number(value):
 
 async def main():
     if DB_NAME != "mds_lims_test":
-        raise RuntimeError("Safety check failed: test database required.")
+        raise RuntimeError("Only mds_lims_test is permitted.")
+
+    if MODE not in ("preview", "apply"):
+        raise RuntimeError("Invalid migration mode.")
 
     if not MONGO_URL:
-        raise RuntimeError("TEST_MONGO_URL is not configured.")
+        raise RuntimeError("TEST_MONGO_URL is missing.")
 
-    client = AsyncIOMotorClient(MONGO_URL)
+    client = AsyncIOMotorClient(
+        MONGO_URL,
+        serverSelectionTimeoutMS=10000
+    )
 
     try:
         db = client[DB_NAME]
 
-        total_records = 0
-        affected_records = 0
-        record_numbers = 0
-        specimen_numbers = 0
-        examples = []
+        connection = await db.command("connectionStatus")
+        users = connection.get("authInfo", {}).get(
+            "authenticatedUsers", []
+        )
 
-        async for record in db.records.find(
-            {},
-            {"lab_number": 1, "samples.lab_number": 1}
+        if not any(
+            user.get("user") == "mds_restore_test"
+            and user.get("db") == "admin"
+            for user in users
         ):
-            total_records += 1
-            changed = False
+            raise RuntimeError(
+                "Safety check failed: restricted test user required."
+            )
 
-            old = record.get("lab_number")
-            new = updated_number(old)
+        records = await db.records.find({}).to_list(length=None)
 
-            if new is not None:
-                record_numbers += 1
-                changed = True
+        affected = []
+        field_count = 0
+        number_owners = defaultdict(set)
 
-                if len(examples) < 10:
-                    examples.append((old, new))
+        for record in records:
+            record_id = record["_id"]
+            changes = {}
+            samples = record.get("samples") or []
 
-            for sample in record.get("samples", []):
-                old = sample.get("lab_number")
-                new = updated_number(old)
+            old_record_number = record.get("lab_number")
+            new_record_number = updated_number(old_record_number)
 
-                if new is not None:
-                    specimen_numbers += 1
-                    changed = True
-
-                    if len(examples) < 10:
-                        examples.append((old, new))
-
-            if changed:
-                affected_records += 1
-
-        print("PREVIEW ONLY - NO DATABASE CHANGES")
-        print(f"Total records examined: {total_records}")
-        print(f"Records requiring changes: {affected_records}")
-        print(f"Record-level numbers to update: {record_numbers}")
-        print(f"Specimen-level numbers to update: {specimen_numbers}")
-        print(f"Total fields to update: {record_numbers + specimen_numbers}")
-
-        print("\nExamples:")
-        for old, new in examples:
-            print(f"  {old} -> {new}")
-
-    finally:
-        client.close()
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
+            if new_record_number is not None:
+                changes["lab_number"] =
