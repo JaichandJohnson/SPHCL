@@ -73,4 +73,4 @@ async def main():
             new_record_number = updated_number(old_record_number)
 
             if new_record_number is not None:
-                changes["lab_number"] =
+                changes["lab_number"] = new_record_number
