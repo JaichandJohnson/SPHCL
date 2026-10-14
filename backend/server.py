@@ -1950,8 +1950,7 @@ async def create_record(payload: LabRecordCreate, user=Depends(get_current_user)
         (
             pertussis_number,
             pertussis_year,
-            pertussis_master_prefix,
-            pertussis_year,
+            pertussis_master_prefix,            
         ) = await generate_pertussis_patient_number()
 
         assign_pertussis_lab_numbers(
