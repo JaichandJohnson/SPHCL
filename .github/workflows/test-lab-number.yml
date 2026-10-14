@@ -1,0 +1,118 @@
+name: Laboratory Number Tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      migration_mode:
+        description: "Choose test migration mode or production read-only preview"
+        required: true
+        type: choice
+        default: production_preview
+        options:
+          - production_preview
+          - preview
+          - apply
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    if: ${{ inputs.migration_mode != 'production_preview' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout test branch
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Run simulated numbering tests
+        working-directory: backend
+        run: python -m unittest test_lab_number_transition -v
+
+      - name: Run real MongoDB numbering tests
+        working-directory: backend
+        env:
+          MONGO_URL: ${{ secrets.TEST_MONGO_URL }}
+          DB_NAME: mds_lims_test
+          ENABLE_GOOGLE_DRIVE_BACKUP: "false"
+        run: python -m unittest test_lab_number_mongodb -v
+
+      - name: Run laboratory record workflow tests
+        working-directory: backend
+        env:
+          MONGO_URL: ${{ secrets.TEST_MONGO_URL }}
+          DB_NAME: mds_lims_test
+          ENABLE_GOOGLE_DRIVE_BACKUP: "false"
+        run: python -m unittest test_lab_record_workflow -v
+
+      - name: Run MR Surveillance numbering tests
+        working-directory: backend
+        env:
+          MONGO_URL: ${{ secrets.TEST_MONGO_URL }}
+          DB_NAME: mds_lims_test
+          ENABLE_GOOGLE_DRIVE_BACKUP: "false"
+        run: python -m unittest test_mr_numbering -v
+
+      - name: Run Rabies numbering tests
+        working-directory: backend
+        env:
+          MONGO_URL: ${{ secrets.TEST_MONGO_URL }}
+          DB_NAME: mds_lims_test
+          ENABLE_GOOGLE_DRIVE_BACKUP: "false"
+        run: python -m unittest test_rabies_numbering -v
+
+      - name: Run complete special dataset numbering tests
+        working-directory: backend
+        env:
+          MONGO_URL: ${{ secrets.TEST_MONGO_URL }}
+          DB_NAME: mds_lims_test
+          ENABLE_GOOGLE_DRIVE_BACKUP: "false"
+        run: python -m unittest test_complete_lab_numbering -v
+
+      - name: Verify MongoDB unique laboratory number index
+        working-directory: backend
+        env:
+          MONGO_URL: ${{ secrets.TEST_MONGO_URL }}
+          DB_NAME: mds_lims_test
+          ENABLE_GOOGLE_DRIVE_BACKUP: "false"
+        run: python -m unittest test_unique_lab_number_index -v
+
+      - name: Run 2026 test laboratory number migration
+        working-directory: backend
+        env:
+          TEST_MONGO_URL: ${{ secrets.TEST_MONGO_URL }}
+          DB_NAME: mds_lims_test
+          MIGRATION_MODE: ${{ inputs.migration_mode }}
+          CONFIRM_TEST_MIGRATION: ${{ inputs.migration_mode == 'apply' && 'APPLY_TO_MDS_LIMS_TEST' || 'NO' }}
+        run: python migrate_2026_lab_numbers.py
+
+  production_preview:
+    name: Production migration preview (read-only)
+    if: ${{ inputs.migration_mode == 'production_preview' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout selected branch
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install MongoDB driver
+        run: python -m pip install 'motor>=3.4,<4'
+
+      - name: Preview production 2026 laboratory number migration
+        working-directory: backend
+        env:
+          PROD_MONGO_URL: ${{ secrets.PROD_MONGO_URL }}
+          DB_NAME: sphcl_lab
+          MIGRATION_MODE: preview
+        run: python migrate_production_2026_lab_numbers.py
