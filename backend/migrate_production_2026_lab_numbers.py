@@ -13,7 +13,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 DB_NAME = 'sphcl_lab'
 PRODUCTION_USER = 'jaichand_db_user'
 YEAR_RE = re.compile(r'/\d{2}$')
-EXPECTED_RECORDS = 917
+EXPECTED_RECORDS = 928
 EXPECTED_CHANGED_RECORDS = 902
 EXPECTED_CHANGED_FIELDS = 1807
 
