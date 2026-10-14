@@ -731,7 +731,7 @@ export default function DataEntry() {
       String(sample.sample_type || "").trim().toLowerCase() === String(sampleDraft.sample_type || "").trim().toLowerCase()
     );
     if (duplicateIndex >= 0) {
-      toast.error("This sample type is already registered. Edit the existing sample to add tests.");
+      toast.error("This specimen type has already been added to this patient record. If needed, open a new record.");
       return;
     }
 
