@@ -139,8 +139,24 @@ async def main():
         updated_records = 0
 
         for record_id, changes in affected:
+            original = next(
+                r for r in records if r["_id"] == record_id
+            )
+
+            conditions = {"_id": record_id}
+
+            for field in changes:
+                if field == "lab_number":
+                    conditions[field] = original.get("lab_number")
+                else:
+                    parts = field.split(".")
+                    index = int(parts[1])
+                    conditions[field] = original["samples"][index].get(
+                        "lab_number"
+                    )
+
             result = await db.records.update_one(
-                {"_id": record_id},
+                conditions,
                 {"$set": changes},
             )
 
