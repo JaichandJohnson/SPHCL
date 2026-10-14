@@ -49,3 +49,11 @@ jobs:
           DB_NAME: mds_lims_test
           ENABLE_GOOGLE_DRIVE_BACKUP: "false"
         run: python -m unittest test_mr_numbering -v
+
+      - name: Run Rabies numbering tests
+        working-directory: backend
+        env:
+          MONGO_URL: ${{ secrets.TEST_MONGO_URL }}
+          DB_NAME: mds_lims_test
+          ENABLE_GOOGLE_DRIVE_BACKUP: "false"
+        run: python -m unittest test_rabies_numbering -v
