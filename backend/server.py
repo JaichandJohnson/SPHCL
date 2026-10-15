@@ -3752,7 +3752,7 @@ async def export_test_statistics(
 
 # ---------- Stats ----------
 @api_router.get("/stats")
-async def stats(user=Depends(get_current_user)):
+async def stats(user=Depends(get_mobile_viewer_user)):
     total = await db.records.count_documents({})
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     today_count = await db.records.count_documents({"date": today})
