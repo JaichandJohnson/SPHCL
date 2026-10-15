@@ -2072,7 +2072,7 @@ async def list_records(
     nvhcp_program: Optional[bool] = None,
     page: int = 1,
     page_size: int = 25,
-    user=Depends(get_current_user),
+    user=Depends(get_mobile_viewer_user),
 ):
     query: dict = {}
     _apply_filters(query, dataset, test, district, sample_type, result_contains, search, date_from, date_to)
