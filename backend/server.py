@@ -923,6 +923,25 @@ async def get_current_user(request: Request):
     return user
 
 
+async def get_mobile_viewer_user(user=Depends(get_current_user)):
+    allowed_emails = {
+        email.strip().lower()
+        for email in os.environ.get(
+            "MOBILE_VIEWER_ALLOWED_EMAILS", ""
+        ).split(",")
+        if email.strip()
+    }
+
+    user_email = str(user.get("email") or "").strip().lower()
+
+    if not allowed_emails or user_email not in allowed_emails:
+        raise HTTPException(
+            status_code=403,
+            detail="Mobile viewer access is not authorized",
+        )
+
+    return user
+
 
 @api_router.get("/lab-number/preview")
 async def preview_lab_number(
