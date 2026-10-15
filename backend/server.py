@@ -3908,6 +3908,17 @@ async def mobile_viewer_read_only(request: Request, call_next):
                 )
     return await call_next(request)
 
+@app.middleware("http")
+async def mobile_viewer_read_only(request: Request, call_next):
+    if os.environ.get("MOBILE_VIEWER_READ_ONLY") == "true":
+        if request.method not in ("GET", "HEAD", "OPTIONS"):
+            if request.url.path != "/api/auth/google":
+                return JSONResponse(
+                    status_code=403,
+                    content={"detail": "Mobile viewer is read-only"},
+                )
+    return await call_next(request)
+    
 app.include_router(api_router)
 app.add_middleware(
     CORSMiddleware,
