@@ -1,5 +1,5 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Response, UploadFile, File
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -3896,6 +3896,17 @@ async def clear_operational_data(
 @api_router.get("/")
 async def root():
     return {"service": "SPHCL Molecular Diagnosis - Lab Data Management"}
+
+@app.middleware("http")
+async def mobile_viewer_read_only(request: Request, call_next):
+    if os.environ.get("MOBILE_VIEWER_READ_ONLY") == "true":
+        if request.method not in ("GET", "HEAD", "OPTIONS"):
+            if request.url.path != "/api/auth/google":
+                return JSONResponse(
+                    status_code=403,
+                    content={"detail": "Mobile viewer is read-only"},
+                )
+    return await call_next(request)
 
 app.include_router(api_router)
 app.add_middleware(
