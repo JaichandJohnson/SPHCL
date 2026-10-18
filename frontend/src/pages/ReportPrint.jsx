@@ -408,7 +408,7 @@ export default function ReportPrint() {
           align-items: end;
           border-top: 1px solid #cbd5e1;
           padding-top: 5px;
-          font-size: 8px;
+          font-size: inherit;
           color: #64748b;
         }
 
@@ -505,15 +505,15 @@ function Header({ title }) {
       />
 
       <div className="mx-auto flex min-h-[145px] max-w-[500px] flex-col items-center justify-center px-4">
-        <div className="text-center text-[18px] font-bold uppercase leading-snug tracking-wide">
+        <div className="text-center text-[15.5pt] font-bold uppercase leading-snug tracking-wide">
           State Public Health and Clinical Laboratory, Trivandrum
         </div>
-        <div className="mt-2 text-center text-[15px] font-semibold uppercase">
+        <div className="mt-2 text-center text-[13.25pt] font-semibold uppercase">
           Molecular Diagnosis Section
         </div>
       </div>
 
-      <div className="mt-1 text-center text-[15px] font-bold">
+      <div className="mt-1 text-center text-[13.25pt] font-bold">
         {title}
       </div>
     </header>
@@ -581,11 +581,11 @@ function IndividualDocument({ record, datasets, reportRemarks, printedTestRemark
         return (
           <main
             key={`individual-page-${pageIndex}`}
-            className="report-page mx-auto bg-white p-[10mm] text-[11px] text-black shadow-lg"
+            className="report-page mx-auto bg-white p-[10mm] text-[10.25pt] text-black shadow-lg"
           >
             <Header title={title} />
 
-            <section className="mt-4 grid grid-cols-3 gap-x-5 gap-y-2 text-[13px]">
+            <section className="mt-4 grid grid-cols-3 gap-x-5 gap-y-2 text-[11.75pt]">
               <Info label="Name" value={record.name} />
               <Info label="Age" value={displayAge(record)} />
               <Info label="Sex" value={record.sex || "—"} />
@@ -765,7 +765,7 @@ function DistrictDocument({
         return (
           <main
             key={`consolidated-page-${pageIndex}`}
-            className="report-page mx-auto bg-white p-[10mm] text-[9px] text-black shadow-lg"
+            className="report-page mx-auto bg-white p-[10mm] text-[8.75pt] text-black shadow-lg"
           >
             <Header title="Consolidated Laboratory Report" />
 
@@ -952,7 +952,7 @@ const Info = ({ label, value }) => (
 
 const InfoCell = ({ label, value }) => (
   <div className="border-r border-black p-2 last:border-r-0">
-    <div className="text-[9px] font-semibold uppercase">{label}</div>
+    <div className="text-[8.75pt] font-semibold uppercase">{label}</div>
     <div className="mt-1 font-medium">{value}</div>
   </div>
 );

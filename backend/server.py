@@ -314,6 +314,86 @@ def normalize_date(value: Any) -> str:
         return text[:10]
 
 
+def _strict_lab_date(value: Any, label: str = "Date") -> str:
+    """Validate a calendar date without permissive pandas date interpretation."""
+    text = str(value or "").strip()
+    try:
+        parsed = datetime.strptime(text, "%Y-%m-%d")
+        if parsed.strftime("%Y-%m-%d") != text:
+            raise ValueError()
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail=f"{label} must be a valid YYYY-MM-DD date")
+    return text
+
+
+def _validate_result_dates(registration_date: str, samples: list, legacy_date=None) -> None:
+    registration_date = _strict_lab_date(registration_date, "Registration date")
+    dates = [("Record result date", legacy_date)]
+    for sample in samples or []:
+        for test in sample.get("tests") or []:
+            dates.append((f"Result date for {test.get('test') or 'test'}", test.get("result_date")))
+    for label, value in dates:
+        if value is None or str(value).strip() == "":
+            continue
+        date = _strict_lab_date(value, label)
+        if date < registration_date:
+            raise HTTPException(status_code=400, detail=f"{label} ({date}) cannot precede registration date ({registration_date})")
+
+
+def _number_year(lab_number: str):
+    """Parse the trailing annual sequence; sample-type prefixes share a dataset sequence."""
+    match = re.search(r"(\d+)\s*/\s*(\d{2}|\d{4})\s*$", str(lab_number or ""))
+    if not match:
+        return None
+    year = int(match.group(2))
+    return int(match.group(1)), (year + 2000 if year < 100 else year)
+
+
+async def _check_lab_date_order(date: str, samples: list, exclude_id: str = None) -> None:
+    """Check existing annual sequences in each dataset, including edit predecessors/successors.
+
+    This is a preflight check, not a database transaction/locking mechanism.
+    """
+    date = _strict_lab_date(date, "Registration date")
+    by_dataset = {}
+    for sample in samples:
+        dataset = normalize_key(sample.get("dataset") or "routine")
+        parsed = _number_year(sample.get("lab_number"))
+        by_dataset.setdefault(dataset, []).append(parsed)
+    for dataset, entries in by_dataset.items():
+        # A newly allocated number always follows all previously allocated numbers.
+        years = {item[1] for item in entries if item}
+        if not years:
+            years = {lab_year()}
+        cursor = db.records.find(
+            {"$or": [{"samples.dataset": dataset}, {"dataset": dataset}]},
+            {"_id": 0, "id": 1, "date": 1, "samples": 1, "dataset": 1, "lab_number": 1},
+        )
+        async for record in cursor:
+            if exclude_id and str(record.get("id")) == str(exclude_id):
+                continue
+            previous_date = str(record.get("date") or "")
+            try:
+                _strict_lab_date(previous_date)
+            except HTTPException:
+                continue  # Historical invalid dates require separate data cleanup.
+            old_samples = record.get("samples") or [{"dataset": record.get("dataset"), "lab_number": record.get("lab_number")}]
+            for old in old_samples:
+                if normalize_key(old.get("dataset") or record.get("dataset") or "routine") != dataset:
+                    continue
+                previous = _number_year(old.get("lab_number"))
+                if not previous or previous[1] not in years:
+                    continue
+                for current in entries:
+                    if current is None:
+                        # New sample: compare against all existing numbers in the current year.
+                        if previous[1] == lab_year() and previous_date > date:
+                            raise HTTPException(status_code=409, detail=f"Registration date {date} is earlier than existing {dataset} lab number {old.get('lab_number')} dated {previous_date}")
+                    elif current[1] == previous[1]:
+                        if (previous[0] < current[0] and previous_date > date) or (previous[0] > current[0] and previous_date < date):
+                            raise HTTPException(status_code=409, detail=f"Registration date conflicts with {dataset} lab number {old.get('lab_number')} dated {previous_date}")
+
+
 def _test_dict(item: Any) -> Dict[str, Any]:
     data = item if isinstance(item, dict) else item.model_dump()
     return {
@@ -1383,6 +1463,7 @@ async def admin_correct_results(
         test_item["result_date"] = correction.result_date or None
         updated += 1
 
+    _validate_result_dates(record.get("date"), samples)
     compatibility = _legacy_from_samples(samples)
     await db.records.update_one(
         {"id": rid},
@@ -1838,13 +1919,14 @@ async def delete_panel(panel_id: str, user=Depends(require_master_access)):
 def _apply_filters(query: dict, dataset: Optional[str], test: Optional[str], district: Optional[str], sample_type: Optional[str], result_contains: Optional[str], search: Optional[str], date_from: Optional[str], date_to: Optional[str]):
     clauses = []
     if dataset:
-        query["dataset"] = normalize_key(dataset)
+        normalized_dataset = normalize_key(dataset)
+        clauses.append({"$or": [{"dataset": normalized_dataset}, {"samples.dataset": normalized_dataset}]})
     if test:
-        clauses.append({"$or": [{"samples.tests.test": test}, {"tests.test": test}, {"test": test}]})
+        clauses.append({"$or": [{"samples.tests.test": {"$regex": re.escape(test), "$options": "i"}}, {"tests.test": {"$regex": re.escape(test), "$options": "i"}}, {"test": {"$regex": re.escape(test), "$options": "i"}}]})
     if district:
-        query["district"] = district
+        query["district"] = {"$regex": re.escape(district), "$options": "i"}
     if sample_type:
-        clauses.append({"$or": [{"samples.sample_type": sample_type}, {"sample_type": sample_type}]})
+        clauses.append({"$or": [{"samples.sample_type": {"$regex": re.escape(sample_type), "$options": "i"}}, {"sample_type": {"$regex": re.escape(sample_type), "$options": "i"}}]})
     if result_contains:
         regex = {"$regex": result_contains, "$options": "i"}
         clauses.append({"$or": [
@@ -1853,9 +1935,9 @@ def _apply_filters(query: dict, dataset: Optional[str], test: Optional[str], dis
             {"results.value": regex}, {"results.name": regex},
         ]})
     if search:
-        regex = {"$regex": search, "$options": "i"}
+        regex = {"$regex": re.escape(search), "$options": "i"}
         clauses.append({"$or": [
-            {"name": regex}, {"lab_number": regex}, {"patient_id": regex},
+            {"name": regex}, {"lab_number": regex}, {"samples.lab_number": regex}, {"patient_id": regex},
             {"requesting_institution": regex}, {"epid_number": regex},
             {"samples.tests.test": regex}, {"tests.test": regex},
         ]})
@@ -1945,6 +2027,8 @@ async def create_record(payload: LabRecordCreate, user=Depends(get_current_user)
         raise HTTPException(status_code=400, detail="At least one sample with one test is required")
     validate_sample_conditions(samples)
     _validate_unique_sample_types(samples)
+    _validate_result_dates(payload.date, samples, payload.result_date)
+    await _check_lab_date_order(payload.date, samples)
 
     # Create requests must never inherit lab numbers from a stale edit form.
     # The server alone allocates numbers for newly registered samples.
@@ -1999,6 +2083,7 @@ async def create_record(payload: LabRecordCreate, user=Depends(get_current_user)
                 sample.get("dataset") or dataset_doc["key"]
             )
 
+    await _check_lab_date_order(payload.date, samples)
     lab_number = samples[0]["lab_number"]
     patient_id = await generate_patient_id()
     compatibility = _legacy_from_samples(samples)
@@ -2051,6 +2136,8 @@ async def list_records(
     date_to: Optional[str] = None,
     pending: Optional[bool] = None,
     nvhcp_program: Optional[bool] = None,
+    sort_by: str = "date",
+    sort_dir: str = "desc",
     page: int = 1,
     page_size: int = 25,
     user=Depends(get_current_user),
@@ -2076,12 +2163,74 @@ async def list_records(
             ]}
         query.setdefault("$and", []).append(pending_test)
     elif pending is False:
-        query.setdefault("$and", []).append({"$or": [{"samples.0": {"$exists": True}}, {"tests.0": {"$exists": True}}]})
+        # Result Entered: at least one actual result value, not merely an assigned test.
+        entered = {"$regex": r"\S", "$options": "i"}
+        query.setdefault("$and", []).append({"$or": [
+            {"samples.tests.result1": entered}, {"samples.tests.result2": entered},
+            {"tests.result1": entered}, {"tests.result2": entered},
+            {"results.value": entered},
+        ]})
 
     total = await db.records.count_documents(query)
     skip = max(0, (page - 1) * page_size)
-    cursor = db.records.find(query, {"_id": 0}).sort([("date", -1), ("created_at", -1)]).skip(skip).limit(page_size)
-    items = await cursor.to_list(page_size)
+    # Sort the complete matching set BEFORE pagination, not just the visible page.
+    allowed_sort = {"date", "name", "age", "district", "requestingInstitution",
+                    "lab_number", "epid_number", "sample_type", "test", "result",
+                    "result_date", "tat"}
+    if sort_by not in allowed_sort:
+        raise HTTPException(status_code=400, detail="Unsupported sort column")
+    if sort_dir not in {"asc", "desc"}:
+        raise HTTPException(status_code=400, detail="Unsupported sort direction")
+    direction = 1 if sort_dir == "asc" else -1
+    first_sample = {"$arrayElemAt": [{"$ifNull": ["$samples", []]}, 0]}
+    first_test = {"$arrayElemAt": [{"$ifNull": ["$_sort_sample.tests", []]}, 0]}
+    # Fallbacks retain support for historical records without samples.
+    stages = [
+        {"$match": query},
+        {"$addFields": {"_sort_sample": first_sample}},
+        {"$addFields": {"_sort_test": first_test}},
+    ]
+    expressions = {
+        "date": "$date", "name": {"$toLower": {"$ifNull": ["$name", ""]}},
+        "age": {"$convert": {"input": {"$ifNull": ["$age_years", "$age"]}, "to": "double", "onError": -1, "onNull": -1}},
+        "district": {"$toLower": {"$ifNull": ["$district", ""]}},
+        "requestingInstitution": {"$toLower": {"$ifNull": ["$requesting_institution", ""]}},
+        "lab_number": {"$ifNull": ["$_sort_sample.lab_number", "$lab_number"]},
+        "epid_number": {"$ifNull": ["$_sort_sample.epid_number", "$epid_number"]},
+        "sample_type": {"$toLower": {"$ifNull": ["$_sort_sample.sample_type", "$sample_type"]}},
+        "test": {"$toLower": {"$ifNull": ["$_sort_test.test", "$test"]}},
+        "result_date": {"$ifNull": ["$_sort_test.result_date", "$result_date"]},
+    }
+    if sort_by == "lab_number":
+        # Extract numeric sequence from e.g. MDS 2491/26 for numerical ordering.
+        stages.append({"$addFields": {"_lab_text": {"$ifNull": ["$_sort_sample.lab_number", "$lab_number"]}}})
+        stages.append({"$addFields": {"_lab_match": {"$regexFind": {"input": {"$ifNull": ["$_lab_text", ""]}, "regex": r"[0-9]+"}}}})
+        sort_expr = {"$convert": {"input": "$_lab_match.match", "to": "long", "onError": -1, "onNull": -1}}
+    elif sort_by == "result":
+        # Pending first, then positive, negative, indeterminate, other.
+        value = {"$toLower": {"$ifNull": ["$_sort_test.result1", ""]}}
+        sort_expr = {"$switch": {"branches": [
+            {"case": {"$eq": [value, ""]}, "then": 0},
+            {"case": {"$eq": [value, "positive"]}, "then": 1},
+            {"case": {"$eq": [value, "negative"]}, "then": 2},
+            {"case": {"$eq": [value, "indeterminate"]}, "then": 3},
+        ], "default": 4}}
+    elif sort_by == "tat":
+        sort_expr = {"$cond": [{"$and": [
+            {"$regexMatch": {"input": {"$ifNull": ["$date", ""]}, "regex": r"^\d{4}-\d{2}-\d{2}$"}},
+            {"$regexMatch": {"input": {"$ifNull": ["$_sort_test.result_date", ""]}, "regex": r"^\d{4}-\d{2}-\d{2}$"}},
+        ]}, {"$dateDiff": {"startDate": {"$dateFromString": {"dateString": "$date", "onError": None}},
+                            "endDate": {"$dateFromString": {"dateString": "$_sort_test.result_date", "onError": None}}, "unit": "day"}}, 999999]}
+    else:
+        sort_expr = expressions[sort_by]
+    stages.extend([
+        {"$addFields": {"_sort_value": sort_expr}},
+        {"$sort": {"_sort_value": direction, "date": -1, "created_at": -1, "id": 1}},
+        {"$skip": skip}, {"$limit": page_size},
+        {"$project": {"_id": 0, "_sort_sample": 0, "_sort_test": 0, "_sort_value": 0,
+                      "_lab_text": 0, "_lab_match": 0}},
+    ])
+    items = await db.records.aggregate(stages).to_list(page_size)
     for it in items:
         _serialize_record(it)
     return {"total": total, "page": page, "page_size": page_size, "items": items}
@@ -2228,6 +2377,7 @@ async def update_record(rid: str, payload: LabRecordUpdate, user=Depends(get_cur
             raise HTTPException(status_code=400, detail="At least one sample with one test is required")
         validate_sample_conditions(samples)
         _validate_unique_sample_types(samples)
+        _validate_result_dates(update.get("date", existing.get("date")), samples, update.get("result_date", existing.get("result_date")))
 
         existing_samples = existing.get("samples") or []
         _protect_existing_samples(existing_samples, samples)
@@ -2417,6 +2567,10 @@ async def update_record(rid: str, payload: LabRecordUpdate, user=Depends(get_cur
         update["lab_number"] = samples[0]["lab_number"]
         update.update(_legacy_from_samples(samples))
 
+    final_samples = update.get("samples", existing.get("samples") or [])
+    _validate_result_dates(update.get("date", existing.get("date")), final_samples, update.get("result_date", existing.get("result_date")))
+    await _check_lab_date_order(update.get("date", existing.get("date")), final_samples, exclude_id=rid)
+
     if not existing.get("patient_id"):
         update["patient_id"] = await generate_patient_id()
 
@@ -2476,6 +2630,20 @@ async def bulk_result(payload: BulkResultPayload, user=Depends(get_current_user)
         raise HTTPException(status_code=400, detail="No ids provided")
     if not payload.test.strip():
         raise HTTPException(status_code=400, detail="Test is required")
+
+    # Validate all targets before writing any records, to avoid partial bulk updates.
+    if payload.result_date:
+        for rid in payload.ids:
+            record = await db.records.find_one({"id": rid}, {"_id": 0})
+            if not record:
+                continue
+            samples = _serialize_record(record).get("samples") or []
+            for sample in samples:
+                if payload.sample_id and sample.get("id") != payload.sample_id:
+                    continue
+                if any(str(t.get("test") or "").strip() == payload.test.strip() for t in sample.get("tests") or []):
+                    _validate_result_dates(record.get("date"), [{"tests": [{"test": payload.test, "result_date": payload.result_date}]}])
+                    break
 
     matched = modified = 0
     for rid in payload.ids:
@@ -2617,6 +2785,7 @@ async def import_records(file: UploadFile = File(...), user=Depends(get_current_
             result1 = _get_cell(row_dict, "result_1", "result1", "result", "result_field_1")
             result2 = _get_cell(row_dict, "result_2", "result2", "result_field_2")
             result_date = normalize_date(_get_cell(row_dict, "result_date")) or None
+            _validate_result_dates(date, [{"tests": [{"test": test_name, "result_date": result_date}]}])
             remarks = _get_cell(row_dict, "remarks")
             sex = _get_cell(row_dict, "sex", "gender")
             institution = _get_cell(row_dict, "requesting_institution", "institution")
@@ -2755,6 +2924,8 @@ async def import_records(file: UploadFile = File(...), user=Depends(get_current_
 
     for group in groups:
         try:
+            _validate_result_dates(group["date"], [{"tests": group["tests"]}])
+            await _check_lab_date_order(group["date"], [{"dataset": group["dataset"], "lab_number": None}])
             lab_number = await generate_lab_number(group["dataset"])
             sample = {
                 "id": f"sample_{uuid.uuid4().hex[:12]}",
@@ -3084,7 +3255,7 @@ async def tat_report(
         if date_to:
             query["date"]["$lte"] = date_to
     if district:
-        query["district"] = district
+        query["district"] = {"$regex": re.escape(district), "$options": "i"}
 
     dataset_key = normalize_key(dataset) if dataset else None
     if dataset_key:
@@ -3518,7 +3689,7 @@ async def test_statistics_report(
         )
 
     if district:
-        query["district"] = district
+        query["district"] = {"$regex": re.escape(district), "$options": "i"}
 
     if clauses:
         query["$and"] = clauses

@@ -234,6 +234,7 @@ export default function DataEntry() {
   });
   const [institutions, setInstitutions] = useState([]);
   const [saving, setSaving] = useState(false);
+  const [backdateConfirmation, setBackdateConfirmation] = useState(null);
   const [masterUnlocked, setMasterUnlocked] = useState(false);
   const [nextLabNumber, setNextLabNumber] = useState(null);
 
@@ -247,6 +248,28 @@ export default function DataEntry() {
   const [patientSearch, setPatientSearch] = useState("");
   const [patientMatches, setPatientMatches] = useState([]);
   const [patientSearching, setPatientSearching] = useState(false);
+  const [pendingDataset, setPendingDataset] = useState(null);
+  const cleanSnapshot = useRef(JSON.stringify(emptyForm(getSavedDataset())));
+  const cleanRecordId = useRef(null);
+  const [formReady, setFormReady] = useState(false);
+
+  const isDirty = formReady && JSON.stringify(form) !== cleanSnapshot.current;
+
+  const switchToBlank = (dataset) => {
+    localStorage.setItem("mds_last_dataset", dataset);
+    setDefaultDataset(dataset);
+    const blank = emptyForm(dataset);
+    cleanSnapshot.current = JSON.stringify(blank);
+    cleanRecordId.current = null;
+    setForm(blank);
+    setSampleDialogOpen(false);
+    setEditingSampleIndex(-1);
+    setSampleDraft(newSample(dataset));
+    setPatientDialogOpen(false);
+    setPendingDataset(null);
+    if (id) nav("/entry");
+    window.setTimeout(() => nameRef.current?.focus(), 0);
+  };
 
   useEffect(() => {
     if (!id) {
@@ -279,7 +302,11 @@ export default function DataEntry() {
   useEffect(() => {
     let cancelled = false;
     // A route change from Edit to New must clear every edit-only field.
-    setForm(emptyForm(getSavedDataset()));
+    const blank = emptyForm(getSavedDataset());
+    cleanSnapshot.current = JSON.stringify(blank);
+    cleanRecordId.current = id || null;
+    setFormReady(false);
+    setForm(blank);
     setSampleDialogOpen(false);
     setEditingSampleIndex(-1);
     setSampleDraft(newSample(getSavedDataset()));
@@ -311,7 +338,7 @@ export default function DataEntry() {
             "routine";
 
           setDefaultDataset(loadedDataset);
-          setForm({
+          const loadedForm = {
             dataset: loadedDataset,
             date: record.date || "",
             name: record.name || "",
@@ -326,8 +353,11 @@ export default function DataEntry() {
             samples: normalizeSamples(record),
             remarks: record.remarks || "",
             expected_updated_at: record.updated_at || "",
-          });
+          };
+          cleanSnapshot.current = JSON.stringify(loadedForm);
+          setForm(loadedForm);
         }
+        if (!cancelled) setFormReady(true);
       } catch (error) {
         if (!cancelled) {
           console.error(error);
@@ -507,9 +537,12 @@ export default function DataEntry() {
   ]);
 
   const updateDefaultDataset = (dataset) => {
-    localStorage.setItem("mds_last_dataset", dataset);
-    setDefaultDataset(dataset);
-    setForm((current) => ({ ...current, dataset }));
+    if (dataset === defaultDataset || saving || !formReady) return;
+    if (isDirty) {
+      setPendingDataset(dataset);
+      return;
+    }
+    switchToBlank(dataset);
   };
 
   const searchExistingPatients = async () => {
@@ -821,23 +854,30 @@ export default function DataEntry() {
     }));
   };
 
-  const save = async (event) => {
-    event.preventDefault();
+  const save = async (event, switchDataset = null, backdateConfirmed = false) => {
+    event?.preventDefault?.();
 
     if (!form.name || !form.date || !form.district) {
       toast.error("Patient Name, Date and District are required");
-      return;
+      return false;
     }
 
     if (!form.samples.length) {
       toast.error("Add at least one sample");
-      return;
+      return false;
     }
 
     const keys = form.samples.map((sample) => String(sample.sample_type || "").trim().toLowerCase());
     if (new Set(keys).size !== keys.length) {
       toast.error("Duplicate sample types are not allowed. Add tests to the existing sample.");
-      return;
+      return false;
+    }
+
+    // Confirm backdating before any write, including Save & Switch.
+    // Existing server-side date and lab-number validations still apply.
+    if (!backdateConfirmed && form.date < localDateValue()) {
+      setBackdateConfirmation({ switchDataset });
+      return false;
     }
 
     setSaving(true);
@@ -924,13 +964,20 @@ export default function DataEntry() {
       toast.success(id ? "Record updated" : "Record saved");
       scheduleDriveSync();
 
+      if (switchDataset) {
+        switchToBlank(switchDataset);
+        return true;
+      }
+
       if (id) {
         nav("/records");
-        return;
+        return true;
       }
 
       const savedRecord = response.data || {};
-      setForm(emptyForm(defaultDataset));
+      const blank = emptyForm(defaultDataset);
+      cleanSnapshot.current = JSON.stringify(blank);
+      setForm(blank);
       api
         .get("/lab-number/preview", {
           params: { dataset: defaultDataset },
@@ -950,8 +997,10 @@ export default function DataEntry() {
           duration: 6000,
         });
       }
+      return true;
     } catch (error) {
       toast.error(error?.response?.data?.detail || "Save failed");
+      return false;
     } finally {
       setSaving(false);
     }
@@ -1470,6 +1519,56 @@ export default function DataEntry() {
           </div>
         </form>
       </Card>
+
+      <Dialog
+        open={backdateConfirmation !== null}
+        onOpenChange={(open) => {
+          if (!open && !saving) setBackdateConfirmation(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirm backdated registration</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-slate-600">
+            The registration date ({form.date}) is earlier than today ({localDateValue()}).
+            Do you want to continue saving this record? Existing date and lab number
+            sequencing validations will still apply.
+          </p>
+          <DialogFooter className="flex gap-2">
+            <Button type="button" variant="outline" disabled={saving} onClick={() => setBackdateConfirmation(null)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={saving}
+              onClick={() => {
+                const targetDataset = backdateConfirmation?.switchDataset || null;
+                setBackdateConfirmation(null);
+                save(null, targetDataset, true);
+              }}
+            >
+              Continue &amp; Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(pendingDataset)} onOpenChange={(open) => { if (!open && !saving) setPendingDataset(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Unsaved changes</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-slate-600">
+            Switching datasets will close the current record and open a blank form. What would you like to do with your changes?
+          </p>
+          <DialogFooter className="flex flex-wrap gap-2">
+            <Button type="button" variant="outline" disabled={saving} onClick={() => setPendingDataset(null)}>Cancel</Button>
+            <Button type="button" variant="outline" disabled={saving} onClick={() => switchToBlank(pendingDataset)}>Discard &amp; Switch</Button>
+            <Button type="button" disabled={saving} onClick={() => save(null, pendingDataset)}>{saving ? "Saving…" : "Save & Switch"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={patientDialogOpen}

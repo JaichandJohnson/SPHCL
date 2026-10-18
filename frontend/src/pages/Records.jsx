@@ -216,6 +216,8 @@ export default function Records() {
   const [selectedDataset, setSelectedDataset] = useState("all");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+  const [filters, setFilters] = useState({ date_from: "", date_to: "", district: "", sample_type: "", test: "", pending: "" });
+  const updateFilter = (key, value) => { setFilters((prev) => ({ ...prev, [key]: value })); setPage(1); };
   const [sort, setSort] = useState({
     column: "date",
     direction: "desc",
@@ -240,6 +242,9 @@ export default function Records() {
               : selectedDataset,
           page,
           page_size: pageSize,
+          sort_by: sort.column,
+          sort_dir: sort.direction,
+          ...Object.fromEntries(Object.entries(filters).filter(([, value]) => value !== "")),
         },
       });
       setData(response.data);
@@ -248,7 +253,7 @@ export default function Records() {
     } finally {
       setLoading(false);
     }
-  }, [q, selectedDataset, page, pageSize]);
+  }, [q, selectedDataset, page, pageSize, sort, filters]);
 
   useEffect(() => {
     load();
@@ -270,32 +275,10 @@ export default function Records() {
       window.removeEventListener("focus", checkMasterAccess);
   }, []);
 
-  const items = useMemo(() => {
-    const direction = sort.direction === "asc" ? 1 : -1;
-    return [...(data.items || [])].sort((a, b) => {
-      const x = sortVal(a, sort.column);
-      const y = sortVal(b, sort.column);
-      let comparison;
+  const items = data.items || [];
 
-      if (sort.column === "lab_number") {
-        comparison = compareLabNumbers(x, y);
-      } else if (sort.column === "result") {
-        comparison = Number(x) - Number(y);
-      } else {
-        comparison =
-          typeof x === "number" && typeof y === "number"
-            ? x - y
-            : String(x).localeCompare(String(y), undefined, {
-                numeric: true,
-                sensitivity: "base",
-              });
-      }
-
-      return comparison * direction;
-    });
-  }, [data.items, sort]);
-
-  const toggle = (column) =>
+  const toggle = (column) => {
+    setPage(1);
     setSort((current) => ({
       column,
       direction:
@@ -307,6 +290,7 @@ export default function Records() {
             ? "asc"
             : "asc",
     }));
+  };
 
   const deleteRecord = async (record) => {
     const labNumbers = (record.samples || [])
@@ -350,7 +334,6 @@ export default function Records() {
     ["sample_type", "Sample"],
     ["test", "Test"],
     ["result", "Result"],
-    ["additional_result", "Additional Result"],
     ["result_date", "Result Date"],
     ["tat", "TAT"],
   ];
@@ -436,6 +419,23 @@ export default function Records() {
         })}
       </div>
 
+      <div className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 bg-white p-3">
+        {[["date_from", "From", "date"], ["date_to", "To", "date"], ["district", "District", "text"],
+          ["sample_type", "Sample type", "text"], ["test", "Test", "text"]].map(([key, label, type]) => (
+          <label key={key} className="flex flex-col gap-1 text-xs text-slate-600">
+            {label}
+            <input type={type} value={filters[key]} onChange={(e) => updateFilter(key, e.target.value)}
+              className="rounded border border-slate-300 bg-white px-2 py-2 text-sm" />
+          </label>
+        ))}
+        <label className="flex flex-col gap-1 text-xs text-slate-600">Result status
+          <select value={filters.pending} onChange={(e) => updateFilter("pending", e.target.value)}
+            className="rounded border border-slate-300 bg-white px-2 py-2 text-sm">
+            <option value="">All</option><option value="true">Pending</option><option value="false">Result Entered</option>
+          </select>
+        </label>
+        <Button variant="outline" size="sm" onClick={() => { setFilters({ date_from: "", date_to: "", district: "", sample_type: "", test: "", pending: "" }); setPage(1); }}>Clear filters</Button>
+      </div>
       <Card className="overflow-hidden border border-slate-200 bg-white shadow-none">
         <div className="overflow-x-auto">
           <table data-testid={TABLE.root} className="zebra w-full text-sm">
