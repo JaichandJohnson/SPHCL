@@ -1085,7 +1085,7 @@ async def google_login(payload: GoogleLoginPayload, response: Response):
         if token_data.get("aud") not in allowed_client_ids:
             raise ValueError("Unrecognized Google OAuth client")
 
-    except ValueError as exc:
+except ValueError as exc:
     logger.warning(
         "Mobile Viewer Google token verification failed: %s",
         type(exc).__name__,
