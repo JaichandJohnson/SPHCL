@@ -1088,9 +1088,9 @@ async def google_login(payload: GoogleLoginPayload, response: Response):
 
     except ValueError as exc:
         logger.warning(
-            "Mobile Viewer Google token verification failed: %s",
-            type(exc).__name__,
-        )
+    "Mobile Viewer Google token verification failed: %s",
+    str(exc),
+)
         raise HTTPException(
             status_code=401,
             detail="Invalid Google credential",
