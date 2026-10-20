@@ -1082,7 +1082,11 @@ async def google_login(payload: GoogleLoginPayload, response: Response):
             os.environ.get("GOOGLE_ANDROID_WEB_CLIENT_ID"),
         }
         allowed_client_ids.discard(None)
-
+        
+        logger.warning(
+            "Token audience matches Android OAuth client: %s",
+            token_data.get("aud") == os.environ.get("GOOGLE_NATIVE_ANDROID_CLIENT_ID"),
+        )
    
         if token_data.get("aud") not in allowed_client_ids:
             logger.warning(
