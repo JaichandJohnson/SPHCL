@@ -1068,25 +1068,29 @@ async def google_login(payload: GoogleLoginPayload, response: Response):
             detail="Google authentication is not configured",
         )
 
+    
     try:
         token_data = id_token.verify_oauth2_token(
-    payload.credential,
-    google_requests.Request(),
-)
+            payload.credential,
+            google_requests.Request(),
+            audience=None,
+        )
 
-allowed_client_ids = {
-    client_id,
-    os.environ.get("GOOGLE_ANDROID_WEB_CLIENT_ID"),
-}
-allowed_client_ids.discard(None)
+        allowed_client_ids = {
+            client_id,
+            os.environ.get("GOOGLE_ANDROID_WEB_CLIENT_ID"),
+        }
+        allowed_client_ids.discard(None)
 
-if token_data.get("aud") not in allowed_client_ids:
-    raise ValueError("Unrecognized Google OAuth client")
+        if token_data.get("aud") not in allowed_client_ids:
+            raise ValueError("Unrecognized Google OAuth client")
+
     except ValueError:
         raise HTTPException(
             status_code=401,
             detail="Invalid Google credential",
         )
+
 
     email = str(token_data.get("email") or "").strip().lower()
     name = str(token_data.get("name") or email).strip()
