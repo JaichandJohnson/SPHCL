@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "dependencies": {
+    "@capacitor-firebase/authentication": "^8.5.2",
     "@capacitor/core": "^8.5.3",
     "@hookform/resolvers": "5.0.1",
     "@phosphor-icons/react": "^2.1.10",
