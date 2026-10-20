@@ -10,6 +10,7 @@ import logging
 import uuid
 import re
 import httpx
+import hashlib
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 import pandas as pd
@@ -1092,10 +1093,12 @@ async def google_login(payload: GoogleLoginPayload, response: Response):
             logger.warning(
                 "Google OAuth audience mismatch: "
                 "matches_primary=%s, matches_android=%s, "
-                "audience_prefix=%s",
+                "audience_hash=%s",
                 token_data.get("aud") == client_id,
                 token_data.get("aud") == os.environ.get("GOOGLE_ANDROID_WEB_CLIENT_ID"),
-                str(token_data.get("aud", ""))[:12],
+                hashlib.sha256(
+    str(token_data.get("aud", "")).encode()
+).hexdigest()[:16],
             )
             raise ValueError("Unrecognized Google OAuth client")
 
