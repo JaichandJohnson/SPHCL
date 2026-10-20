@@ -1088,10 +1088,10 @@ async def google_login(payload: GoogleLoginPayload, response: Response):
             logger.warning(
                 "Google OAuth audience mismatch: "
                 "matches_primary=%s, matches_android=%s, "
-                "audience_suffix=%s",
+                "audience_prefix=%s",
                 token_data.get("aud") == client_id,
                 token_data.get("aud") == os.environ.get("GOOGLE_ANDROID_WEB_CLIENT_ID"),
-                str(token_data.get("aud", ""))[-20:],
+                str(token_data.get("aud", ""))[:12],
             )
             raise ValueError("Unrecognized Google OAuth client")
 
