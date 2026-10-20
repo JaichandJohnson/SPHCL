@@ -1070,10 +1070,18 @@ async def google_login(payload: GoogleLoginPayload, response: Response):
 
     try:
         token_data = id_token.verify_oauth2_token(
-            payload.credential,
-            google_requests.Request(),
-            client_id,
-        )
+    payload.credential,
+    google_requests.Request(),
+)
+
+allowed_client_ids = {
+    client_id,
+    os.environ.get("GOOGLE_ANDROID_WEB_CLIENT_ID"),
+}
+allowed_client_ids.discard(None)
+
+if token_data.get("aud") not in allowed_client_ids:
+    raise ValueError("Unrecognized Google OAuth client")
     except ValueError:
         raise HTTPException(
             status_code=401,
