@@ -5,6 +5,7 @@
   "dependencies": {
     "@capacitor-firebase/authentication": "^8.5.2",
     "@capacitor/core": "^8.5.3",
+    "firebase": "^12.4.0",
     "@hookform/resolvers": "5.0.1",
     "@phosphor-icons/react": "^2.1.10",
     "@radix-ui/react-accordion": "1.2.8",
