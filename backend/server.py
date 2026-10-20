@@ -1083,7 +1083,13 @@ async def google_login(payload: GoogleLoginPayload, response: Response):
             os.environ.get("GOOGLE_ANDROID_WEB_CLIENT_ID"),
         }
         allowed_client_ids.discard(None)
-        
+
+        logger.warning(
+            "Android OAuth configuration: present=%s, exact_match=%s",
+            bool(os.environ.get("GOOGLE_ANDROID_WEB_CLIENT_ID")),
+            os.environ.get("GOOGLE_ANDROID_WEB_CLIENT_ID", "").strip()
+            == "363359499912-80herq9o0grfq38edt2p3ikjqm95pli0.apps.googleusercontent.com",
+        )
         logger.warning(
             "Token audience matches Android OAuth client: %s",
             token_data.get("aud") == os.environ.get("GOOGLE_NATIVE_ANDROID_CLIENT_ID"),
