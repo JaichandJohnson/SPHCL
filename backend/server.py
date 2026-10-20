@@ -1085,12 +1085,15 @@ async def google_login(payload: GoogleLoginPayload, response: Response):
         if token_data.get("aud") not in allowed_client_ids:
             raise ValueError("Unrecognized Google OAuth client")
 
-    except ValueError:
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid Google credential",
-        )
-
+    except ValueError as exc:
+    logger.warning(
+        "Mobile Viewer Google token verification failed: %s",
+        type(exc).__name__,
+    )
+    raise HTTPException(
+        status_code=401,
+        detail="Invalid Google credential",
+    )
 
     email = str(token_data.get("email") or "").strip().lower()
     name = str(token_data.get("name") or email).strip()
