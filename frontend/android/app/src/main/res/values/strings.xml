@@ -1,0 +1,8 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">MDS LIMS Mobile Viewer</string>
+    <string name="title_activity_main">MDS LIMS Mobile Viewer</string>
+    <string name="package_name">org.mdslims.mobileviewer</string>
+    <string name="custom_url_scheme">org.mdslims.mobileviewer</string>
+    <string name="default_web_client_id">363359499912-80herq9o0grfq38edt2p3ikjqm95pli0.apps.googleusercontent.com</string>
+</resources>
