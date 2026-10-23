@@ -1019,7 +1019,7 @@ async def preview_lab_number(
     if key == "mr_surveillance":
         sequence = int(ds.get("next_number", 1))
         return {
-            "display": f"WM S/U/T {sequence}",
+            "display": f"WM S/T/U/N {sequence}/{year_suffix}",
             "note": "One patient sequence; prefix depends on specimen",
         }
 
