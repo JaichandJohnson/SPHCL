@@ -364,7 +364,7 @@ export default function BulkResult() {
               <option value={usesEquivocal(dataset, test) ? "Equivocal" : "Indeterminate"}>
                 {usesEquivocal(dataset, test) ? "Equivocal" : "Indeterminate"}
               </option>
-              <option value="Not Done">Not Done</option>
+              <option value="Not Tested">Not Tested</option>
               {dataset === "typhoid_surveillance" && <option value="Other">Other</option>}
             </select>
           </Field>
@@ -493,7 +493,7 @@ export default function BulkResult() {
                   <td className="min-w-44 px-3 py-2">
                     <Input
                       value={row.result2}
-                      disabled={String(row.result1 || "").trim().toLowerCase() === "not done"}
+                      disabled={String(row.result1 || "").trim().toLowerCase() === "not tested"}
                       onChange={(event) =>
                         updateRow(
                           row,
@@ -549,7 +549,7 @@ const Field = ({ label, children }) => (
 );
 
 const ResultEditor = ({ value, onChange, allowOther = false, useEquivocal = false }) => {
-  const standard = ["", "Positive", "Negative", useEquivocal ? "Equivocal" : "Indeterminate", "Not Done", ...(allowOther ? ["Other"] : [])];
+  const standard = ["", "Positive", "Negative", useEquivocal ? "Equivocal" : "Indeterminate", "Not Tested", ...(allowOther ? ["Other"] : [])];
   const custom = value && !standard.includes(value);
 
   // Keep existing custom or historical results selectable without changing stored data.
@@ -565,7 +565,7 @@ const ResultEditor = ({ value, onChange, allowOther = false, useEquivocal = fals
       <option value="Negative">Negative</option>
       <option value={useEquivocal ? "Equivocal" : "Indeterminate"}>{useEquivocal ? "Equivocal" : "Indeterminate"}</option>
       {custom && <option value={value}>{value} (existing result)</option>}
-      <option value="Not Done">Not Done</option>
+      <option value="Not Tested">Not Tested</option>
       {allowOther && <option value="Other">Other</option>}
     </select>
   );
@@ -573,14 +573,14 @@ const ResultEditor = ({ value, onChange, allowOther = false, useEquivocal = fals
 
 
 const isDengueSerotyping = (name) => /dengue/i.test(String(name || "")) && /serotyp/i.test(String(name || ""));
-const DENGUE_OPTIONS = ["Dengue type 1", "Dengue type 2", "Dengue type 3", "Dengue type 4", "Negative", "Not Done"];
+const DENGUE_OPTIONS = ["Dengue type 1", "Dengue type 2", "Dengue type 3", "Dengue type 4", "Negative", "Not Tested"];
 const DengueResultEditor = ({ value, onChange }) => {
   const selected = String(value || "").split(",").map(v => v.trim()).filter(Boolean);
   const toggle = (option) => {
     let next;
     if (selected.includes(option)) next = selected.filter(v => v !== option);
-    else if (option === "Negative" || option === "Not Done") next = [option];
-    else next = [...selected.filter(v => v !== "Negative" && v !== "Not Done"), option];
+    else if (option === "Negative" || option === "Not Tested") next = [option];
+    else next = [...selected.filter(v => v !== "Negative" && v !== "Not Tested"), option];
     onChange(next.join(", "));
   };
   return <details className="relative min-w-48 rounded border bg-white p-2">
