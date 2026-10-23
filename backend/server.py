@@ -821,13 +821,15 @@ def mr_sample_prefix(sample_type: str) -> str:
         return "WM S"
     if normalized == "urine":
         return "WM U"
-    if normalized in {
-        "throat swab",
-        "nasopharyngeal swab",
-        "naso pharyngeal swab",
-        "oropharyngeal swab",
-    }:
+    if normalized == "throat swab":
         return "WM T"
+    if normalized in {"nasopharyngeal swab", "naso pharyngeal swab"}:
+        return "WM N"
+    if normalized == "oropharyngeal swab":
+        raise HTTPException(
+            status_code=400,
+            detail="Oropharyngeal Swab has no configured MR Surveillance lab-number prefix",
+        )
     raise HTTPException(
         status_code=400,
         detail=(
