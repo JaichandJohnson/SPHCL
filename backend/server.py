@@ -63,7 +63,7 @@ DEFAULT_TESTS_BY_DATASET = {
     "typhoid_surveillance": ["Salmonella Typhi Culture", "Typhoid PCR", "Widal Test"],
 }
 
-VALID_RESULT_VALUES = {"", "Positive", "Negative", "Indeterminate", "Other", "Pending"}
+VALID_RESULT_VALUES = {"", "Positive", "Negative", "Indeterminate", "Equivocal", "Other", "Pending"}
 
 # ---------- Models ----------
 class ResultItem(BaseModel):
