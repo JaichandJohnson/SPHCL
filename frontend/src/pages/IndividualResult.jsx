@@ -77,10 +77,10 @@ const usesEquivocal = (dataset, testName) =>
 
 const resultOptionsFor = (dataset, testName) =>
   usesEquivocal(dataset, testName)
-    ? ["Positive", "Negative", "Equivocal", "Not Done"]
-    : ["Positive", "Negative", "Indeterminate", "Not Done"];
+    ? ["Positive", "Negative", "Equivocal", "Not Tested"]
+    : ["Positive", "Negative", "Indeterminate", "Not Tested"];
 
-const RESULT_OPTIONS = ["Positive", "Negative", "Indeterminate", "Not Done"];
+const RESULT_OPTIONS = ["Positive", "Negative", "Indeterminate", "Not Tested"];
 const TYPHOID_RESULT_OPTIONS = [...RESULT_OPTIONS, "Other"];
 
 const displayDate = (value) => {
@@ -1009,7 +1009,7 @@ export default function IndividualResult() {
                     <td className="min-w-44 px-3 py-2">
                       <Input
                         value={row.result2}
-                        disabled={String(row.result1 || "").trim().toLowerCase() === "not done"}
+                        disabled={String(row.result1 || "").trim().toLowerCase() === "not tested"}
                         onChange={(event) =>
                           updateRow(
                             row,
@@ -1111,14 +1111,14 @@ const Field = ({ label, children }) => (
 
 
 const isDengueSerotyping = (name) => /dengue/i.test(String(name || "")) && /serotyp/i.test(String(name || ""));
-const DENGUE_OPTIONS = ["Dengue type 1", "Dengue type 2", "Dengue type 3", "Dengue type 4", "Negative", "Not Done"];
+const DENGUE_OPTIONS = ["Dengue type 1", "Dengue type 2", "Dengue type 3", "Dengue type 4", "Negative", "Not Tested"];
 const DengueResultEditor = ({ value, onChange }) => {
   const selected = String(value || "").split(",").map(v => v.trim()).filter(Boolean);
   const toggle = (option) => {
     let next;
     if (selected.includes(option)) next = selected.filter(v => v !== option);
-    else if (option === "Negative" || option === "Not Done") next = [option];
-    else next = [...selected.filter(v => v !== "Negative" && v !== "Not Done"), option];
+    else if (option === "Negative" || option === "Not Tested") next = [option];
+    else next = [...selected.filter(v => v !== "Negative" && v !== "Not Tested"), option];
     onChange(next.join(", "));
   };
   return <details className="relative min-w-48 rounded border bg-white p-2">
