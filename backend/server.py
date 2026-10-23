@@ -63,7 +63,7 @@ DEFAULT_TESTS_BY_DATASET = {
     "typhoid_surveillance": ["Salmonella Typhi Culture", "Typhoid PCR", "Widal Test"],
 }
 
-VALID_RESULT_VALUES = {"", "Positive", "Negative", "Indeterminate", "Equivocal", "Other", "Pending"}
+VALID_RESULT_VALUES = {"", "Positive", "Negative", "Indeterminate", "Equivocal", "Other", "Pending", "Not Tested", "Not Done"}
 
 # ---------- Models ----------
 class ResultItem(BaseModel):
@@ -3299,7 +3299,7 @@ async def tat_report(
                         continue
                     bucket = _statistics_bucket(item.get("result1"), item.get("result2"))
                     if bucket == "not_done":
-                        not_done.append({"lab_number": sample.get("lab_number") or record.get("lab_number"), "dataset": sample_dataset, "test": item.get("test"), "item_type": "test", "status": "Completed — Not Done"})
+                        not_done.append({"lab_number": sample.get("lab_number") or record.get("lab_number"), "dataset": sample_dataset, "test": item.get("test"), "item_type": "test", "status": "Completed — Not Tested"})
                         continue
                     if bucket == "pending":
                         continue
@@ -3375,7 +3375,7 @@ async def tat_report(
                     continue
                 bucket = _statistics_bucket(item.get("result1"), item.get("result2"))
                 if bucket == "not_done":
-                    not_done.append({"lab_number": record.get("lab_number"), "dataset": record.get("dataset"), "test": item.get("test"), "item_type": "test", "status": "Completed — Not Done"})
+                    not_done.append({"lab_number": record.get("lab_number"), "dataset": record.get("dataset"), "test": item.get("test"), "item_type": "test", "status": "Completed — Not Tested"})
                     continue
                 if bucket == "pending":
                     continue
@@ -3427,11 +3427,11 @@ def _statistics_bucket(result: Any, result2: Any = None) -> str:
     """Result 1 'Not Done' is terminal, irrespective of Result 2."""
     first = str(result or "").strip().lower()
     second = str(result2 or "").strip().lower()
-    if first == "not done":
+    if first in {"not done", "not tested"}:
         return "not_done"
     if not first and not second:
         return "pending"
-    if not first and second == "not done":
+    if not first and second in {"not done", "not tested"}:
         return "not_done"
     value = first or second
     if value in {"positive", "negative", "indeterminate"}:
@@ -3617,7 +3617,7 @@ async def monthly_summary_export(month: str, datasets: Optional[str] = None, use
     book.remove(book.active)
     sheets = [("Dataset Summary", data["rows"] + [data["totals"]],
                [("Dataset", "name"), ("Received", "received"), ("Completed", "completed"),
-                ("Completed — Not Done", "not_done"), ("Pending*", "pending"), ("Rejected", "rejected"),
+                ("Completed — Not Tested", "not_done"), ("Pending*", "pending"), ("Rejected", "rejected"),
                 ("TAT assessed", "tat_assessed"), ("Within TAT", "tat_within"),
                 ("Exceeded TAT", "tat_exceeded"), ("Average TAT (days)", "average_tat_days"),
                 ("TAT compliance (%)", "tat_compliance_percent"),
@@ -3626,7 +3626,7 @@ async def monthly_summary_export(month: str, datasets: Optional[str] = None, use
                [("Dataset", "dataset_name"), ("Type", "item_type"), ("Test / Panel", "test"),
                 ("Assigned to received samples", "assigned"), ("Positive", "positive"),
                 ("Negative", "negative"), ("Indeterminate", "indeterminate"),
-                ("Other", "other"), ("Not Done", "not_done"), ("Pending", "pending")])]
+                ("Other", "other"), ("Not Tested", "not_done"), ("Pending", "pending")])]
     for title, entries, columns in sheets:
         ws = book.create_sheet(title)
         ws.append(["MDS LIMS — Monthly Laboratory Summary", "Month: " + month])
@@ -3646,9 +3646,9 @@ async def monthly_summary_export(month: str, datasets: Optional[str] = None, use
     notes = book.create_sheet("Definitions")
     for line in ["Monthly report definitions", "Received: sample receipt date in selected month.",
                  "Completed: samples with at least one performed test result dated in selected month (not necessarily all tests completed).",
-                 "Completed — Not Done: samples with a Not Done result dated in selected month; excluded from performed counts and TAT.",
+                 "Completed — Not Tested: samples with a Not Tested result dated in selected month; excluded from performed counts and TAT.",
                  "Pending: samples received in month with no result recorded at report generation.",
-                 "Undated Not Done results cannot be assigned to a completion month.",
+                 "Undated Not Tested results cannot be assigned to a completion month.",
                  "Testing summary: test/panel results for samples received in selected month.",
                  "TAT: completed test/panel results in month with a configured threshold; measured in calendar days.",
                  "Average TAT is weighted across assessed test/panel results; pending and missing thresholds excluded.",
