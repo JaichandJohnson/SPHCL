@@ -13,6 +13,11 @@ import {
   millisecondsUntilNextDay,
 } from "@/lib/localDate";
 
+const usesEquivocal = (dataset, testName) =>
+  dataset === "special_serology" ||
+  (dataset === "mr_surveillance" &&
+    ["measles igm", "rubella igm"].includes(String(testName || "").trim().toLowerCase()));
+
 const blank = (value) =>
   value === null ||
   value === undefined ||
@@ -356,7 +361,9 @@ export default function BulkResult() {
             >
               <option value="Positive">Positive</option>
               <option value="Negative">Negative</option>
-              <option value="Indeterminate">Indeterminate</option>
+              <option value={usesEquivocal(dataset, test) ? "Equivocal" : "Indeterminate"}>
+                {usesEquivocal(dataset, test) ? "Equivocal" : "Indeterminate"}
+              </option>
               <option value="Not Done">Not Done</option>
               {dataset === "typhoid_surveillance" && <option value="Other">Other</option>}
             </select>
@@ -478,6 +485,7 @@ export default function BulkResult() {
                   <td className="min-w-44 px-3 py-2">
                     {isDengueSerotyping(row.testName) ? <DengueResultEditor value={row.result1} onChange={value => updateRow(row, "result1", value)} /> : <ResultEditor
                       allowOther={(row.dataset || dataset) === "typhoid_surveillance"}
+                      useEquivocal={usesEquivocal(row.dataset || dataset, row.testName)}
                       value={row.result1}
                       onChange={(value) => updateRow(row, "result1", value)}
                     />}
@@ -540,18 +548,11 @@ const Field = ({ label, children }) => (
   </div>
 );
 
-const ResultEditor = ({ value, onChange, allowOther = false }) => {
-  const standard = ["", "Positive", "Negative", "Indeterminate", "Not Done", ...(allowOther ? ["Other"] : [])];
+const ResultEditor = ({ value, onChange, allowOther = false, useEquivocal = false }) => {
+  const standard = ["", "Positive", "Negative", useEquivocal ? "Equivocal" : "Indeterminate", "Not Done", ...(allowOther ? ["Other"] : [])];
   const custom = value && !standard.includes(value);
 
-  if (custom) {
-    return (
-      <Input
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-      />
-    );
-  }
+  // Keep existing custom or historical results selectable without changing stored data.
 
   return (
     <select
@@ -562,7 +563,8 @@ const ResultEditor = ({ value, onChange, allowOther = false }) => {
       <option value="">Pending</option>
       <option value="Positive">Positive</option>
       <option value="Negative">Negative</option>
-      <option value="Indeterminate">Indeterminate</option>
+      <option value={useEquivocal ? "Equivocal" : "Indeterminate"}>{useEquivocal ? "Equivocal" : "Indeterminate"}</option>
+      {custom && <option value={value}>{value} (existing result)</option>}
       <option value="Not Done">Not Done</option>
       {allowOther && <option value="Other">Other</option>}
     </select>
