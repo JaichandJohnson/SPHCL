@@ -70,6 +70,16 @@ const compareLabNumbers = (left, right) => {
   return a.text.localeCompare(b.text, undefined, { numeric: true, sensitivity: "base" });
 };
 
+const usesEquivocal = (dataset, testName) =>
+  dataset === "special_serology" ||
+  (dataset === "mr_surveillance" &&
+    ["measles igm", "rubella igm"].includes(String(testName || "").trim().toLowerCase()));
+
+const resultOptionsFor = (dataset, testName) =>
+  usesEquivocal(dataset, testName)
+    ? ["Positive", "Negative", "Equivocal", "Not Done"]
+    : ["Positive", "Negative", "Indeterminate", "Not Done"];
+
 const RESULT_OPTIONS = ["Positive", "Negative", "Indeterminate", "Not Done"];
 const TYPHOID_RESULT_OPTIONS = [...RESULT_OPTIONS, "Other"];
 
@@ -957,12 +967,31 @@ export default function IndividualResult() {
                     <td className="px-3 py-2">{row.sampleType}</td>
                     <td className="px-3 py-2 font-medium">{row.testName}</td>
                     <td className="min-w-48 px-3 py-2">
-                      {isDengueSerotyping(row.testName) ? <DengueResultEditor value={row.result1} onChange={value => updateRow(row, "result1", value)} /> : <Input
-                        list={row.dataset === "typhoid_surveillance" ? "typhoid-result-options" : "individual-result-options"}
-                        value={row.result1}
-                        onChange={event => updateRow(row, "result1", event.target.value)}
-                        placeholder="Select or type"
-                      />}
+                      {isDengueSerotyping(row.testName) ? (
+                        <DengueResultEditor value={row.result1} onChange={value => updateRow(row, "result1", value)} />
+                      ) : usesEquivocal(row.dataset, row.testName) ? (
+                        <select
+                          value={row.result1 || ""}
+                          onChange={(event) => updateRow(row, "result1", event.target.value)}
+                          className="w-full rounded border bg-white p-2"
+                        >
+                          <option value="">Pending</option>
+                          {row.result1 && !resultOptionsFor(row.dataset, row.testName).includes(row.result1) && (
+                            <option value={row.result1}>{row.result1} (existing result)</option>
+                          )}
+                          {resultOptionsFor(row.dataset, row.testName).map((option) => (
+                            <option key={option} value={option}>{option}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <Input
+                          list={row.dataset === "typhoid_surveillance" ? "typhoid-result-options" : "individual-result-options"}
+                          value={row.result1}
+                          onChange={(event) => updateRow(row, "result1", event.target.value)}
+                          onFocus={(event) => event.target.select()}
+                          placeholder="Select or type"
+                        />
+                      )}
                     </td>
                     <td className="min-w-40 px-3 py-2">
                       <Input
