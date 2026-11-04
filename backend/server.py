@@ -257,6 +257,7 @@ class AdminResultCorrectionItem(BaseModel):
     result1: Optional[str] = None
     result2: Optional[str] = None
     result_date: Optional[str] = None
+    remarks: Optional[str] = None
 
 
 class AdminResultCorrectionPayload(BaseModel):
@@ -1463,6 +1464,7 @@ async def admin_correct_results(
         test_item["result1"] = correction.result1 or ""
         test_item["result2"] = correction.result2 or ""
         test_item["result_date"] = correction.result_date or None
+        test_item["remarks"] = correction.remarks or ""
         updated += 1
 
     _validate_result_dates(record.get("date"), samples)

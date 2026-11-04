@@ -146,6 +146,7 @@ const rowsFor = (record) => {
         test: test.test || test.name || "—",
         result: resultText(test),
         resultDate,
+        testRemarks: test.remarks || "",
         tat: tat(record.date, resultDate),
       });
     });
@@ -335,6 +336,7 @@ export default function Records() {
     ["test", "Test"],
     ["result", "Result"],
     ["result_date", "Result Date"],
+    ["test_remarks", "Test Remarks"],
     ["tat", "TAT"],
   ];
 
@@ -466,7 +468,7 @@ export default function Records() {
             <tbody className="text-slate-700">
               {loading && (
                 <tr>
-                  <td colSpan={12} className="p-6 text-center">
+                  <td colSpan={13} className="p-6 text-center">
                     Loading…
                   </td>
                 </tr>
@@ -475,7 +477,7 @@ export default function Records() {
               {!loading && items.length === 0 && (
                 <tr>
                   <td
-                    colSpan={12}
+                    colSpan={13}
                     className="p-10 text-center text-slate-500"
                   >
                     No records found.
@@ -551,6 +553,7 @@ export default function Records() {
                         <td className="px-3 py-2">
                           {displayDate(row.resultDate)}
                         </td>
+                        <td className="px-3 py-2 whitespace-pre-wrap">{row.testRemarks}</td>
                         <td className="px-3 py-2">
                           {row.tat === null
                             ? "—"
