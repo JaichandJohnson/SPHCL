@@ -989,6 +989,7 @@ export default function DataEntry() {
               result1: test.result1 || "",
               result2: test.result2 || "",
               result_date: test.result_date || null,
+              remarks: test.remarks || "",
             }))
           ),
         });
@@ -1454,7 +1455,7 @@ export default function DataEntry() {
                 Administrator Result Correction
               </div>
               <div className="mt-1 text-xs text-slate-600">
-                Master Data is unlocked. Result and result date correction is enabled.
+                Master Data is unlocked. Result, result date, and test remarks correction is enabled.
               </div>
 
               <div className="mt-3 overflow-x-auto rounded-lg border bg-white">
@@ -1467,6 +1468,7 @@ export default function DataEntry() {
                       <th className="px-3 py-2">Result</th>
                       <th className="px-3 py-2">Additional Result</th>
                       <th className="px-3 py-2">Result Date</th>
+                      <th className="px-3 py-2">Test Remarks</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1513,6 +1515,20 @@ export default function DataEntry() {
                                   const samples = [...current.samples];
                                   const tests = [...(samples[sampleIndex].tests || [])];
                                   tests[testIndex] = { ...tests[testIndex], result_date: event.target.value };
+                                  samples[sampleIndex] = { ...samples[sampleIndex], tests };
+                                  return { ...current, samples };
+                                })
+                              }
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <Input
+                              value={test.remarks || ""}
+                              onChange={(event) =>
+                                setForm((current) => {
+                                  const samples = [...current.samples];
+                                  const tests = [...(samples[sampleIndex].tests || [])];
+                                  tests[testIndex] = { ...tests[testIndex], remarks: event.target.value };
                                   samples[sampleIndex] = { ...samples[sampleIndex], tests };
                                   return { ...current, samples };
                                 })
