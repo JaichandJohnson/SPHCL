@@ -573,14 +573,14 @@ const ResultEditor = ({ value, onChange, allowOther = false, useEquivocal = fals
 
 
 const isDengueSerotyping = (name) => /dengue/i.test(String(name || "")) && /serotyp/i.test(String(name || ""));
-const DENGUE_OPTIONS = ["Dengue type 1", "Dengue type 2", "Dengue type 3", "Dengue type 4", "Negative", "Not Tested"];
+const DENGUE_OPTIONS = ["Dengue type 1", "Dengue type 2", "Dengue type 3", "Dengue type 4", "Positive", "Negative", "Not Tested"];
 const DengueResultEditor = ({ value, onChange }) => {
   const selected = String(value || "").split(",").map(v => v.trim()).filter(Boolean);
   const toggle = (option) => {
     let next;
     if (selected.includes(option)) next = selected.filter(v => v !== option);
-    else if (option === "Negative" || option === "Not Tested") next = [option];
-    else next = [...selected.filter(v => v !== "Negative" && v !== "Not Tested"), option];
+    else if (option === "Positive" || option === "Negative" || option === "Not Tested") next = [option];
+    else next = [...selected.filter(v => v !== "Positive" && v !== "Negative" && v !== "Not Tested"), option];
     onChange(next.join(", "));
   };
   return <details className="relative min-w-48 rounded border bg-white p-2">
