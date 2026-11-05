@@ -2,7 +2,7 @@
 import unittest
 from datetime import datetime, timezone
 
-from sync_core import canonical_digest, classify_incoming, SyncEvent
+from backend.sync_core import canonical_digest, classify_incoming, SyncEvent
 
 
 class SyncCoreTests(unittest.TestCase):
