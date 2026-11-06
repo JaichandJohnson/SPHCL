@@ -423,6 +423,9 @@ def _validate_tests(tests: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         if key in seen:
             raise HTTPException(status_code=400, detail=f"Duplicate test in the same sample: {name}")
         seen.add(key)
+        # Pending tests must not inherit dates from completed tests.
+        if not str(item.get("result1") or "").strip() and not str(item.get("result2") or "").strip():
+            item["result_date"] = None
         cleaned.append(item)
     return cleaned
 
