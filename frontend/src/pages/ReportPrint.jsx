@@ -769,7 +769,7 @@ function DistrictDocument({
           >
             <Header title="Consolidated Laboratory Report" />
 
-            <section className="mt-3 grid grid-cols-3 gap-2 border border-black p-2">
+            <section className="mt-3 grid grid-cols-3 gap-2 border border-black p-2 text-[11.75pt]">
               <Info
                 label="District"
                 value={district || "Any district"}
