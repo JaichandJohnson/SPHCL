@@ -980,9 +980,33 @@ export default function DataEntry() {
         }));
       }
 
-      const response = id
-        ? await api.put(`/records/${id}`, payload)
-        : await api.post("/records", payload);
+      // An administrator correcting only test results, dates or remarks must
+      // not submit an ordinary record update first. That endpoint intentionally
+      // rejects edits to existing results.
+      const adminCorrectionOnly = Boolean(id && masterUnlocked && (() => {
+        const original = JSON.parse(cleanSnapshot.current || "{}");
+        const stripCorrections = (value) => ({
+          ...value,
+          samples: (value.samples || []).map((sample) => ({
+            ...sample,
+            tests: (sample.tests || []).map((test) => ({
+              ...test,
+              result1: "",
+              result2: "",
+              result_date: null,
+              remarks: "",
+            })),
+          })),
+        });
+        return JSON.stringify(stripCorrections(form)) ===
+          JSON.stringify(stripCorrections(original));
+      })());
+
+      const response = adminCorrectionOnly
+        ? { data: {} }
+        : id
+          ? await api.put(`/records/${id}`, payload)
+          : await api.post("/records", payload);
 
       if (id && masterUnlocked) {
         await api.put(`/records/${id}/admin-results`, {
