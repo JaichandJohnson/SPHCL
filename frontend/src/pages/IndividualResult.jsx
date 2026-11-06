@@ -178,6 +178,7 @@ export default function IndividualResult() {
   });
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [customResultRows, setCustomResultRows] = useState(new Set());
   const [pageSize, setPageSize] = useState(50);
   const [page, setPage] = useState(1);
 
@@ -256,6 +257,7 @@ export default function IndividualResult() {
 
       setPendingKeys(keys);
       setDirtyRecords(new Set());
+      setCustomResultRows(new Set());
       setPage(1);
     } catch {
       toast.error("Failed to load pending records");
@@ -569,6 +571,12 @@ export default function IndividualResult() {
 
         test[field] = value;
 
+        if ((field === "result1" || field === "result2") &&
+            !String(test.result1 || "").trim() &&
+            !String(test.result2 || "").trim()) {
+          test.result_date = null;
+        }
+
         if (
           (field === "result1" || field === "result2") &&
           value &&
@@ -623,7 +631,15 @@ export default function IndividualResult() {
           requesting_institution:
             record.requesting_institution || null,
           epid_number: record.epid_number || null,
-          samples: record.samples,
+          samples: record.samples.map((sample) => ({
+            ...sample,
+            tests: (sample.tests || []).map((test) => ({
+              ...test,
+              result_date: String(test.result1 || "").trim() || String(test.result2 || "").trim()
+                ? test.result_date || null
+                : null,
+            })),
+          })),
           remarks: record.remarks || null,
 
           sample_type: firstSample.sample_type || "",
@@ -984,13 +1000,50 @@ export default function IndividualResult() {
                           ))}
                         </select>
                       ) : (
-                        <Input
-                          list={row.dataset === "typhoid_surveillance" ? "typhoid-result-options" : "individual-result-options"}
-                          value={row.result1}
-                          onChange={(event) => updateRow(row, "result1", event.target.value)}
-                          onFocus={(event) => event.target.select()}
-                          placeholder="Select or type"
-                        />
+                        <div className="flex flex-col gap-1">
+                          <select
+                            value={customResultRows.has(row.key) ||
+                              (row.result1 && !(
+                                row.dataset === "typhoid_surveillance"
+                                  ? TYPHOID_RESULT_OPTIONS
+                                  : RESULT_OPTIONS
+                              ).includes(row.result1))
+                                ? "__custom__"
+                                : row.result1 || ""}
+                            onChange={(event) => {
+                              if (event.target.value === "__custom__") {
+                                setCustomResultRows((current) => new Set(current).add(row.key));
+                              } else {
+                                setCustomResultRows((current) => {
+                                  const next = new Set(current);
+                                  next.delete(row.key);
+                                  return next;
+                                });
+                                updateRow(row, "result1", event.target.value);
+                              }
+                            }}
+                            className="w-full rounded border bg-white p-2"
+                          >
+                            <option value="">Pending</option>
+                            {(row.dataset === "typhoid_surveillance"
+                              ? TYPHOID_RESULT_OPTIONS
+                              : RESULT_OPTIONS
+                            ).map((option) => (
+                              <option key={option} value={option}>{option}</option>
+                            ))}
+                            <option value="__custom__">Type another result…</option>
+                          </select>
+                          {(customResultRows.has(row.key) ||
+                            (row.result1 && !(row.dataset === "typhoid_surveillance"
+                              ? TYPHOID_RESULT_OPTIONS
+                              : RESULT_OPTIONS).includes(row.result1))) && (
+                            <Input
+                              value={row.result1}
+                              onChange={(event) => updateRow(row, "result1", event.target.value)}
+                              placeholder="Enter result"
+                            />
+                          )}
+                        </div>
                       )}
                     </td>
                     <td className="min-w-40 px-3 py-2">
