@@ -168,7 +168,10 @@ const normalizeTest = (test, recordResultDate = "") => ({
   test: test.test || test.name || "",
   result1: test.result1 || test.result_1 || test.result || "",
   result2: test.result2 || test.result_2 || "",
-  result_date: test.result_date || recordResultDate || "",
+  result_date: (String(test.result1 || test.result_1 || test.result || "").trim() ||
+    String(test.result2 || test.result_2 || "").trim())
+    ? (test.result_date || recordResultDate || "")
+    : "",
   remarks: test.remarks || "",
   sources: test.sources || [],
 });
@@ -898,7 +901,9 @@ export default function DataEntry() {
           test: test.test,
           result1: test.result1 || "",
           result2: test.result2 || "",
-          result_date: test.result_date || null,
+          result_date: (String(test.result1 || "").trim() || String(test.result2 || "").trim())
+            ? test.result_date || null
+            : null,
           remarks: test.remarks || null,
           sources: test.sources || [],
         })),
