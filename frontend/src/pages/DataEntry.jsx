@@ -143,7 +143,11 @@ const datasetInfo = (key) =>
 
 const epidPrefix = (dataset, district) => {
   const tag = EPID_TAGS[dataset];
-  const normalizedDistrict = String(district || "").trim().toLowerCase();
+  const normalizedDistrict = String(district || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
   const code = DISTRICT_CODES[normalizedDistrict];
 
   if (!tag || !code) return "";
