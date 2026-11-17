@@ -64,6 +64,9 @@ const DISTRICT_CODES = {
   kasaragod: "KSG",
   kasargod: "KSG",
   lakshadweep: "LKD",
+  mahe: "MAE",
+  "mahe, py": "MAE",
+  "mahe, puducherry": "MAE",
 };
 
 const PATIENT_EPID_DATASETS = new Set([
@@ -146,6 +149,8 @@ const epidPrefix = (dataset, district) => {
   if (!tag || !code) return "";
 
   const year = String(new Date().getFullYear()).slice(-2);
+
+  if (code === "MAE") return `${tag} IND PD MAE ${year}`;
 
   return normalizedDistrict === "lakshadweep"
     ? `${tag} IND LK LKD ${year}`
