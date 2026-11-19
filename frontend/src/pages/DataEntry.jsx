@@ -595,7 +595,8 @@ export default function DataEntry() {
 
   const openNewSample = () => {
     setEditingSampleIndex(-1);
-    setSampleDraft(newSample(defaultDataset));
+    const draft = newSample(defaultDataset);
+    setSampleDraft(applyAutoAssignments(draft));
     setSampleDialogOpen(true);
   };
 
@@ -653,6 +654,42 @@ export default function DataEntry() {
     return next;
   };
 
+  // Populate the actual tests when a sample type is chosen, not just a hint.
+  // A panel contributes its component tests without requiring separate
+  // standalone test mapping for those components.
+  const applyAutoAssignments = (draft) => {
+    const mapping = (opts.sample_mappings_by_dataset?.[draft.dataset] || [])
+      .find((item) =>
+        String(item.sample_type || "").trim().toLowerCase() ===
+        String(draft.sample_type || "").trim().toLowerCase()
+      );
+    if (!mapping) return draft;
+
+    if (mapping.auto_assign) {
+      (mapping.tests || []).forEach((name) => {
+        if (!draft.tests.some((test) => test.test === name)) {
+          draft.tests.push(newTest(name, [
+            { type: "mapping", id: null, name: null },
+          ]));
+        }
+      });
+    }
+
+    if (mapping.auto_assign_panels) {
+      const approvedPanels = new Set(mapping.panels || []);
+      (opts.panels_by_dataset?.[draft.dataset] || []).forEach((panel) => {
+        if (
+          approvedPanels.has(panel.id) &&
+          panel.active !== false &&
+          (panel.tests || []).length
+        ) {
+          assignPanelToDraft(draft, panel);
+        }
+      });
+    }
+    return draft;
+  };
+
   const updateDraft = (key, value) => {
     setSampleDraft((current) => {
       const next = { ...current, [key]: value };
@@ -663,6 +700,7 @@ export default function DataEntry() {
         next.assigned_panels = [];
         next.epid_number = "";
         next.testSearch = "";
+        applyAutoAssignments(next);
       }
 
       if (key === "sample_type" && String(current.sample_type || "").trim().toLowerCase() !== String(value || "").trim().toLowerCase()) {
@@ -670,6 +708,7 @@ export default function DataEntry() {
         next.tests = [];
         next.assigned_panels = [];
         next.testSearch = "";
+        applyAutoAssignments(next);
       }
 
       return next;
@@ -1857,9 +1896,9 @@ export default function DataEntry() {
 
             {sampleDraft.sample_type && mappingForDraft && (
               <div className="md:col-span-2 rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-700">
-                {mappingForDraft.auto_assign
-                  ? "The mapped tests were assigned automatically. You may remove tests that are not required."
-                  : "Only tests mapped to this sample type are available."}
+                {mappingForDraft.auto_assign || mappingForDraft.auto_assign_panels
+                  ? "Configured tests and panels have been assigned automatically. Please verify the selection."
+                  : "Only tests and panels mapped to this sample type are available."}
               </div>
             )}
 
