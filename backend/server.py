@@ -530,12 +530,65 @@ async def _samples_from_payload(
 
         tests = _validate_tests(tests)
 
+        # Explicitly mapped panels are also a valid source of permitted tests.
+        # Verify panel membership and contents against the database; do not
+        # trust client-supplied panel names or component lists.
+        selected_panel_docs = []
+        if sample.get("assigned_panels"):
+            permitted_ids = set((mapping or {}).get("panels") or [])
+            for assignment in sample["assigned_panels"]:
+                panel_id = str(assignment.get("panel_id") or "").strip()
+                if not panel_id or panel_id not in permitted_ids:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Panel is not permitted for sample: {sample_type}",
+                    )
+                panel = await db.panels.find_one(
+                    {
+                        "id": panel_id,
+                        "dataset": sample_dataset_doc["key"],
+                        "active": {"$ne": False},
+                    },
+                    {"_id": 0},
+                )
+                if not panel or not panel.get("tests"):
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Assigned panel is unavailable for sample: {sample_type}",
+                    )
+                selected_panel_docs.append(panel)
+
         if mapping:
             allowed = {
                 str(name).strip().lower()
                 for name in (mapping.get("tests") or [])
                 if str(name).strip()
             }
+            for panel in selected_panel_docs:
+                allowed.update(
+                    str(name).strip().lower()
+                    for name in panel["tests"]
+                    if str(name).strip()
+                )
+
+            submitted = {
+                str(item["test"]).strip().lower()
+                for item in tests
+            }
+            for panel in selected_panel_docs:
+                missing = [
+                    name for name in panel["tests"]
+                    if str(name).strip().lower() not in submitted
+                ]
+                if missing:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=(
+                            f"Assigned panel '{panel['name']}' is incomplete: "
+                            + ", ".join(missing)
+                        ),
+                    )
+
             invalid = [
                 item["test"]
                 for item in tests
