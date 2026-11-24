@@ -81,7 +81,7 @@ const resultOptionsFor = (dataset, testName) =>
     : ["Positive", "Negative", "Indeterminate", "Not Tested"];
 
 const RESULT_OPTIONS = ["Positive", "Negative", "Indeterminate", "Not Tested"];
-const TYPHOID_RESULT_OPTIONS = [...RESULT_OPTIONS, "Other"];
+const TYPHOID_RESULT_OPTIONS = RESULT_OPTIONS;
 
 const displayDate = (value) => {
   if (!value) return "—";
