@@ -1,3 +1,5 @@
+import NotTestedReasonEditor from "@/components/NotTestedReasonEditor";
+import { isNotTested } from "@/lib/notTestedReasons";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
@@ -1599,18 +1601,33 @@ export default function DataEntry() {
                             />
                           </td>
                           <td className="px-3 py-2">
-                            <Input
-                              value={test.remarks || ""}
-                              onChange={(event) =>
-                                setForm((current) => {
-                                  const samples = [...current.samples];
-                                  const tests = [...(samples[sampleIndex].tests || [])];
-                                  tests[testIndex] = { ...tests[testIndex], remarks: event.target.value };
-                                  samples[sampleIndex] = { ...samples[sampleIndex], tests };
-                                  return { ...current, samples };
-                                })
-                              }
-                            />
+                            {isNotTested(test.result1) || isNotTested(test.result2) ? (
+                              <NotTestedReasonEditor
+                                value={test.remarks || ""}
+                                onChange={(value) =>
+                                  setForm((current) => {
+                                    const samples = [...current.samples];
+                                    const tests = [...(samples[sampleIndex].tests || [])];
+                                    tests[testIndex] = { ...tests[testIndex], remarks: value };
+                                    samples[sampleIndex] = { ...samples[sampleIndex], tests };
+                                    return { ...current, samples };
+                                  })
+                                }
+                              />
+                            ) : (
+                              <Input
+                                value={test.remarks || ""}
+                                onChange={(event) =>
+                                  setForm((current) => {
+                                    const samples = [...current.samples];
+                                    const tests = [...(samples[sampleIndex].tests || [])];
+                                    tests[testIndex] = { ...tests[testIndex], remarks: event.target.value };
+                                    samples[sampleIndex] = { ...samples[sampleIndex], tests };
+                                    return { ...current, samples };
+                                  })
+                                }
+                              />
+                            )}
                           </td>
                         </tr>
                       ))
