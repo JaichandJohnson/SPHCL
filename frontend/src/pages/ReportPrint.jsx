@@ -151,7 +151,7 @@ export default function ReportPrint() {
     // Sample Remarks are printed below the sample's test table.
     // Do not repeat an identical sample-level explanation in every test row.
     const normalizeRemark = (value) =>
-      String(value || "").replace(/\\s+/g, " ").trim().toLowerCase();
+      String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
     const testRemark = String(test.remarks || "").trim();
     const distinctTestRemark =
       normalizeRemark(testRemark) === normalizeRemark(sample?.remarks)
