@@ -148,7 +148,16 @@ export default function ReportPrint() {
       reference.normal_range && `Normal Range: ${reference.normal_range}${reference.unit ? ` ${reference.unit}` : ""}`,
       reference.reference_remarks,
     ].filter(Boolean).join("; ") : "";
-    return [referenceText, test.remarks].filter(Boolean).join("; ") || "—";
+    // Sample Remarks are printed below the sample's test table.
+    // Do not repeat an identical sample-level explanation in every test row.
+    const normalizeRemark = (value) =>
+      String(value || "").replace(/\\s+/g, " ").trim().toLowerCase();
+    const testRemark = String(test.remarks || "").trim();
+    const distinctTestRemark =
+      normalizeRemark(testRemark) === normalizeRemark(sample?.remarks)
+        ? ""
+        : testRemark;
+    return [referenceText, distinctTestRemark].filter(Boolean).join("; ") || "—";
   };
 
   const selectedTests = (searchParams.get("tests") || searchParams.get("test") || "")
