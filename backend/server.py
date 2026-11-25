@@ -5,6 +5,7 @@ from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo import ReturnDocument
 import os
+import copy
 import io
 import logging
 import uuid
@@ -409,6 +410,49 @@ def _test_dict(item: Any) -> Dict[str, Any]:
             for source in (data.get("sources") or [])
         ],
     }
+
+
+def _validate_not_tested_reasons(samples, previous_samples=None):
+    """Reject newly recorded Not Tested outcomes without a test-level explanation.
+
+    Pre-existing legacy Not Tested results without an explanation are tolerated
+    only while that particular result remains unchanged.
+    """
+    old_by_id = {
+        str(sample.get("id")): sample
+        for sample in (previous_samples or [])
+        if sample.get("id")
+    }
+    for sample in samples:
+        previous = old_by_id.get(str(sample.get("id") or ""), {})
+        prior_tests = {
+            str(test.get("id")): test
+            for test in (previous.get("tests") or [])
+            if test.get("id")
+        }
+        for test in (sample.get("tests") or []):
+            result = str(test.get("result1") or "").strip().casefold()
+            secondary = str(test.get("result2") or "").strip().casefold()
+            if "not tested" not in {result, secondary}:
+                continue
+            if str(test.get("remarks") or "").strip():
+                continue
+            old = prior_tests.get(str(test.get("id") or ""), {})
+            if (
+                old
+                and str(old.get("result1") or "").strip().casefold() == result
+                and str(old.get("result2") or "").strip().casefold() == secondary
+                and not str(old.get("remarks") or "").strip()
+            ):
+                continue
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Reason is required when Not Tested is selected for "
+                    f"{test.get('test') or 'a test'} "
+                    f"({sample.get('lab_number') or sample.get('sample_type') or 'sample'})"
+                ),
+            )
 
 
 def _validate_tests(tests: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -1490,6 +1534,7 @@ async def admin_correct_results(
         raise HTTPException(status_code=404, detail="Record not found")
 
     samples = record.get("samples") or []
+    previous_samples = copy.deepcopy(samples)
     updated = 0
 
     for correction in payload.corrections:
@@ -1523,6 +1568,7 @@ async def admin_correct_results(
         test_item["remarks"] = correction.remarks or ""
         updated += 1
 
+    _validate_not_tested_reasons(samples, previous_samples)
     _validate_result_dates(record.get("date"), samples)
     compatibility = _legacy_from_samples(samples)
     await db.records.update_one(
@@ -2087,6 +2133,7 @@ async def create_record(payload: LabRecordCreate, user=Depends(get_current_user)
         raise HTTPException(status_code=400, detail="At least one sample with one test is required")
     validate_sample_conditions(samples)
     _validate_unique_sample_types(samples)
+    _validate_not_tested_reasons(samples)
     _validate_result_dates(payload.date, samples, payload.result_date)
     await _check_lab_date_order(payload.date, samples)
 
@@ -2437,6 +2484,7 @@ async def update_record(rid: str, payload: LabRecordUpdate, user=Depends(get_cur
             raise HTTPException(status_code=400, detail="At least one sample with one test is required")
         validate_sample_conditions(samples)
         _validate_unique_sample_types(samples)
+        _validate_not_tested_reasons(samples, existing.get("samples") or [])
         _validate_result_dates(update.get("date", existing.get("date")), samples, update.get("result_date", existing.get("result_date")))
 
         existing_samples = existing.get("samples") or []
@@ -2690,6 +2738,10 @@ async def bulk_result(payload: BulkResultPayload, user=Depends(get_current_user)
         raise HTTPException(status_code=400, detail="No ids provided")
     if not payload.test.strip():
         raise HTTPException(status_code=400, detail="Test is required")
+
+    # Require one justification for each newly applied Not Tested outcome.
+    if "not tested" in {str(payload.result1 or "").strip().casefold(), str(payload.result2 or "").strip().casefold()} and not str(payload.remarks or "").strip():
+        raise HTTPException(status_code=400, detail="A test remark is required for Not Tested")
 
     # Validate all targets before writing any records, to avoid partial bulk updates.
     if payload.result_date:

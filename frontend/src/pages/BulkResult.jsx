@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { scheduleDriveSync } from "@/lib/drive";
+import NotTestedReasonEditor from "@/components/NotTestedReasonEditor";
+import { isNotTested } from "@/lib/notTestedReasons";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -225,11 +227,20 @@ export default function BulkResult() {
       toast.info("No changes to save");
       return;
     }
+    const changed = records.filter((record) => dirtyRecords.has(record.id));
+    const missing = changed.flatMap((record) =>
+      (record.samples || []).flatMap((sample) =>
+        (sample.tests || []).filter((test) =>
+          isNotTested(test.result1) && !String(test.remarks || "").trim()
+        ).map((test) => `${sample.lab_number || "Sample"} — ${test.test}`)
+      )
+    );
+    if (missing.length) {
+      toast.error(`A reason is required for Not Tested: ${missing.slice(0, 3).join(", ")}`);
+      return;
+    }
     setSaving(true);
     try {
-      const changed = records.filter((record) =>
-        dirtyRecords.has(record.id)
-      );
       for (const record of changed) {
         const firstSample = record.samples?.[0] || {};
         const firstTests = firstSample.tests || [];
@@ -518,16 +529,17 @@ export default function BulkResult() {
                     />
                   </td>
                   <td className="min-w-56 px-3 py-2">
-                    <Input
-                      value={row.remarks}
-                      onChange={(event) =>
-                        updateRow(
-                          row,
-                          "remarks",
-                          event.target.value
-                        )
-                      }
-                    />
+                    {isNotTested(row.result1) ? (
+                      <NotTestedReasonEditor
+                        value={row.remarks}
+                        onChange={(value) => updateRow(row, "remarks", value)}
+                      />
+                    ) : (
+                      <Input
+                        value={row.remarks}
+                        onChange={(event) => updateRow(row, "remarks", event.target.value)}
+                      />
+                    )}
                   </td>
                 </tr>
               ))}

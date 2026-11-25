@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { scheduleDriveSync } from "@/lib/drive";
+import NotTestedReasonEditor from "@/components/NotTestedReasonEditor";
+import { isNotTested } from "@/lib/notTestedReasons";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -610,12 +612,22 @@ export default function IndividualResult() {
       return;
     }
 
+    const changed = records.filter((record) => dirtyRecords.has(record.id));
+    const missing = changed.flatMap((record) =>
+      (record.samples || []).flatMap((sample) =>
+        (sample.tests || []).filter((test) =>
+          isNotTested(test.result1) && !String(test.remarks || "").trim()
+        ).map((test) => `${sample.lab_number || "Sample"} — ${test.test}`)
+      )
+    );
+    if (missing.length) {
+      toast.error(`A reason is required for Not Tested: ${missing.slice(0, 3).join(", ")}`);
+      return;
+    }
+
     setSaving(true);
 
     try {
-      const changed = records.filter((record) =>
-        dirtyRecords.has(record.id)
-      );
 
       for (const record of changed) {
         const firstSample = record.samples?.[0] || {};
@@ -1074,17 +1086,18 @@ export default function IndividualResult() {
                       />
                     </td>
                     <td className="min-w-52 px-3 py-2">
-                      <Input
-                        value={row.testRemarks}
-                        onChange={(event) =>
-                          updateRow(
-                            row,
-                            "remarks",
-                            event.target.value
-                          )
-                        }
-                        placeholder="Optional"
-                      />
+                      {isNotTested(row.result1) ? (
+                        <NotTestedReasonEditor
+                          value={row.testRemarks}
+                          onChange={(value) => updateRow(row, "remarks", value)}
+                        />
+                      ) : (
+                        <Input
+                          value={row.testRemarks}
+                          onChange={(event) => updateRow(row, "remarks", event.target.value)}
+                          placeholder="Optional"
+                        />
+                      )}
                     </td>
                     <td className="px-3 py-2">
                       <span
