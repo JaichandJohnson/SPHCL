@@ -5,6 +5,7 @@ from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo import ReturnDocument
 import os
+import copy
 import io
 import logging
 import uuid
@@ -1533,6 +1534,7 @@ async def admin_correct_results(
         raise HTTPException(status_code=404, detail="Record not found")
 
     samples = record.get("samples") or []
+    previous_samples = copy.deepcopy(samples)
     updated = 0
 
     for correction in payload.corrections:
@@ -1566,7 +1568,7 @@ async def admin_correct_results(
         test_item["remarks"] = correction.remarks or ""
         updated += 1
 
-    _validate_not_tested_reasons(samples, record.get("samples") or [])
+    _validate_not_tested_reasons(samples, previous_samples)
     _validate_result_dates(record.get("date"), samples)
     compatibility = _legacy_from_samples(samples)
     await db.records.update_one(
