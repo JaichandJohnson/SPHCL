@@ -2740,7 +2740,7 @@ async def bulk_result(payload: BulkResultPayload, user=Depends(get_current_user)
         raise HTTPException(status_code=400, detail="Test is required")
 
     # Require one justification for each newly applied Not Tested outcome.
-    if str(payload.result1 or "").strip().casefold() == "not tested" and not str(payload.remarks or "").strip():
+    if "not tested" in {str(payload.result1 or "").strip().casefold(), str(payload.result2 or "").strip().casefold()} and not str(payload.remarks or "").strip():
         raise HTTPException(status_code=400, detail="A test remark is required for Not Tested")
 
     # Validate all targets before writing any records, to avoid partial bulk updates.
